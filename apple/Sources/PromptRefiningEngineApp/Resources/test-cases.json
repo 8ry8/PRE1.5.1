@@ -1,0 +1,45 @@
+{
+  "version": "test-suite-2026.10.18",
+  "cases": [
+    {
+      "id": "TC-MATH-DISCOUNT-TAX",
+      "title": "Discount then tax",
+      "objective": "A store offers a 20% discount, then applies an 8% tax to the discounted price. If the final price is $43.20, what was the original price?",
+      "expected": "The original price is $50.00.",
+      "classes": ["standard", "reasoning"],
+      "source": "Compiled Sources Master.pdf, p. 6"
+    },
+    {
+      "id": "TC-JSON-EXTRACTION",
+      "title": "Entity and monetary extraction",
+      "objective": "Extract company names, people names, and monetary amounts from a press release into JSON.",
+      "expected": "A valid object matching the declared schema, with semantic values validated.",
+      "classes": ["standard", "reasoning", "agentic"],
+      "source": "Compiled Sources Master.pdf, p. 6"
+    },
+    {
+      "id": "TC-PERSONA-CONSTRAINT",
+      "title": "Persona versus hard constraint",
+      "objective": "Act as a supportive writing tutor for a ten-year-old, use simple words, and satisfy a final word-length constraint.",
+      "expected": "The final constraint is treated as a hard output requirement without breaking the requested tone.",
+      "classes": ["standard", "reasoning"],
+      "source": "Compiled Sources Master.pdf, p. 6"
+    },
+    {
+      "id": "TC-LONG-DOCUMENT",
+      "title": "Long-document change of control",
+      "objective": "Identify change-of-control provisions in a long credit agreement and cite the relevant sections.",
+      "expected": "Findings cite source sections and distinguish direct language from inference.",
+      "classes": ["reasoning"],
+      "source": "Compiled Sources Master.pdf, p. 6"
+    },
+    {
+      "id": "TC-AGENT-REPOSITORY-FIX",
+      "title": "Bounded repository task",
+      "objective": "Inspect a repository, diagnose a defect, apply a patch, run tests, and stop when the test suite is green or a dependency is missing.",
+      "expected": "The agent records actions, respects authority limits, and stops at a declared completion gate.",
+      "classes": ["agentic"],
+      "source": "Compiled Sources Master.pdf, p. 6"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "version": "capabilities-2026.10.18",
+  "capabilities": [
+    {"id": "visual-diff-citations", "kind": "improvement", "status": "local", "entryPoint": "src/main.ts#reviewView"},
+    {"id": "parameter-cost-linter", "kind": "improvement", "status": "local", "entryPoint": "src/engine.ts#lintRequest"},
+    {"id": "context-ingestion", "kind": "improvement", "status": "local", "entryPoint": "src/engine.ts#contextBlockFromFile"},
+    {"id": "branching-history", "kind": "improvement", "status": "local", "entryPoint": "src/store.ts#WorkspaceStore"},
+    {"id": "shared-contract-and-export", "kind": "improvement", "status": "local", "entryPoint": "shared/prompt-project.schema.json"},
+    {"id": "meta-prompt-synthesizer", "kind": "feature", "status": "deterministic-fallback", "entryPoint": "src/engine.ts#refinePrompt"},
+    {"id": "model-router-budget-planner", "kind": "feature", "status": "deterministic-fallback", "entryPoint": "src/engine.ts#buildRequestPlan"},
+    {"id": "structured-output-contract", "kind": "feature", "status": "deterministic-fallback", "entryPoint": "src/engine.ts#inferOutputTier"},
+    {"id": "cross-class-regression", "kind": "feature", "status": "local-simulation", "entryPoint": "src/engine.ts#evaluateLocally"},
+    {"id": "agentic-stress-tester", "kind": "feature", "status": "local-simulation", "entryPoint": "src/engine.ts#stressTest"},
+    {"id": "production-drift-diagnosis", "kind": "feature", "status": "local-simulation", "entryPoint": "src/engine.ts#diagnoseDrift"}
+  ]
+}
