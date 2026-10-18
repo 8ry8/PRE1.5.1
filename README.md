@@ -56,6 +56,12 @@ npm run preview
 
 The build runs TypeScript checking first. `dist/` is generated output and is ignored by Git.
 
+## Deploy to GitHub Pages
+
+GitHub Pages must serve Vite's compiled output; it cannot run the TypeScript entry point directly. The workflow in `.github/workflows/pages.yml` installs dependencies, runs the contract tests, builds `dist/`, and deploys that artifact when `main` is updated. On pull requests it runs the same checks without deploying. The workflow reads the Pages base path so project-site assets resolve correctly under `/PRE1.5.1/` while local development continues to use `/`.
+
+For the first deployment, open **Settings → Pages** and set **Build and deployment → Source** to **GitHub Actions**. Do not publish the repository root as a legacy Pages site: the root `index.html` is a Vite development entry point and references TypeScript source that GitHub Pages does not compile.
+
 ## Run the Android client
 
 Install Android Studio Ladybug or newer with Android SDK 35, then open the `android/` folder. Gradle will download the Android and Compose dependencies; choose an emulator and press **Run**. See `android/README.md` for the production boundary and beginner steps.
