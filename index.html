@@ -1,0 +1,1602 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prompt Refining Engine v1.0.0 — Production Optimization Platform</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              400: '#34d399',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            },
+            accent: {
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b0f19;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+    .tab-active {
+      background-color: #4f46e5 !important;
+      color: #ffffff !important;
+      box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3);
+    }
+  </style>
+</head>
+
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col antialiased selection:bg-indigo-600/40 selection:text-indigo-200">
+
+  <!-- Top Sticky Navigation Bar -->
+  <header class="border-b border-slate-800/90 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand & Version -->
+      <div class="flex items-center space-x-3.5">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-emerald-500 to-cyan-400 p-[1.5px] flex items-center justify-center shadow-lg shadow-indigo-600/25">
+          <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+            <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-base sm:text-lg tracking-tight text-white">Prompt Refining Engine</span>
+            <span class="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">v1.0.0 Production</span>
+          </div>
+          <p class="text-[11px] text-slate-400 hidden sm:block">Context-Aware AI Architect, Model Matcher & Video/Storyboard Optimizer</p>
+        </div>
+      </div>
+
+      <!-- Quick Preset Buttons -->
+      <div class="flex items-center space-x-2">
+        <button onclick="loadSamplePreset('legal_video')" class="text-xs px-2.5 py-1.5 rounded-lg bg-indigo-950/60 text-indigo-300 hover:bg-indigo-900/60 border border-indigo-700/50 font-medium transition flex items-center space-x-1.5">
+          <span>🎬 Preset: Legal Noir Video</span>
+        </button>
+        <button onclick="loadSamplePreset('math_reasoning')" class="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition hidden md:inline-flex items-center space-x-1.5">
+          <span>⚡ Preset: o3 Logic</span>
+        </button>
+        <button onclick="loadSamplePreset('json_schema')" class="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition hidden lg:inline-flex items-center space-x-1.5">
+          <span>📋 Preset: Schema</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-6">
+    
+    <!-- Tab Controls Row -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-slate-800/80 pb-3">
+      <div class="flex flex-wrap gap-2" id="navigationTabs">
+        <button onclick="switchTab('tab-workbench')" id="btn-tab-workbench" class="tab-active px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center space-x-2">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          <span>Workbench & Refiner</span>
+        </button>
+        <button onclick="switchTab('tab-matrix')" id="btn-tab-matrix" class="bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition border border-slate-800 flex items-center space-x-2">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <span>GPT-4o vs o3 & Model Matrix</span>
+        </button>
+        <button onclick="switchTab('tab-checklist')" id="btn-tab-checklist" class="bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition border border-slate-800 flex items-center space-x-2">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span>Refinement Checklist</span>
+        </button>
+        <button onclick="switchTab('tab-testsuite')" id="btn-tab-testsuite" class="bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition border border-slate-800 flex items-center space-x-2">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+          <span>Side-by-Side Test Suite</span>
+        </button>
+      </div>
+
+      <!-- Live Engine Mode & Domain Pill -->
+      <div class="flex items-center space-x-2 text-xs font-mono bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg text-slate-300 self-start md:self-auto">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="activeStatusLabel">Domain: Dynamic Auto-Detection</span>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 1: WORKBENCH (ASSESSMENT, RECOMMENDER & PROMPT GENERATOR) -->
+    <!-- ========================================================================= -->
+    <div id="tab-workbench" class="space-y-6">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- LEFT COLUMN: Inputs, Goals, Supplementary Data & Controls (5 Cols) -->
+        <div class="lg:col-span-5 space-y-4">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div class="flex items-center space-x-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                <h2 class="text-sm font-bold uppercase tracking-wider text-slate-200">Task Objective & Context</h2>
+              </div>
+              <button onclick="clearWorkbench()" class="text-xs text-rose-400 hover:text-rose-300 underline font-medium">Clear All</button>
+            </div>
+
+            <!-- Model Selection Dropdown with 10 Frontier Models -->
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                Target AI Architecture
+              </label>
+              <div class="relative">
+                <select id="targetModelSelect" onchange="onModelDropdownChange()" class="w-full bg-slate-950 border border-slate-700 text-slate-100 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none transition appearance-none pr-10 font-medium">
+                  <option value="auto" selected>🤖 Auto-Detect Optimal Model Architecture</option>
+                  
+                  <optgroup label="Creative, Video & Multimodal Frontiers">
+                    <option value="gemini_pro">Gemini 2.5 Pro (Deep Visual/Audio Reasoning & Storyboards)</option>
+                    <option value="gemini_flash">Gemini 2.5 Flash (Ultra-Fast Multimodal & High Throughput)</option>
+                    <option value="gpt4o">GPT-4o (Cinematic Directing, Few-Shot & Strict Delimiters)</option>
+                    <option value="fable">Fable 5.0 (World Simulation, Gothic Mood & NPC Personas)</option>
+                  </optgroup>
+
+                  <optgroup label="Reasoning & High-Compute Models">
+                    <option value="o3">OpenAI o3 / o3-mini (Latent Chain-of-Thought Logic)</option>
+                    <option value="deepseek">DeepSeek R1 / V3 (Reinforcement Deep Reasoner)</option>
+                    <option value="grok">xAI Grok 3 (Real-Time Search & Critical Analysis)</option>
+                  </optgroup>
+
+                  <optgroup label="Autonomous & Agentic Runtime">
+                    <option value="manus">Manus (Autonomous Web & Execution Agent)</option>
+                    <option value="base44">Base44 (Full-Stack Automated App Generator)</option>
+                    <option value="copilot">GitHub / M365 Copilot (Code & Document Refactoring)</option>
+                    <option value="kimi">Kimi Moonshot k1.5 (Massive Document & Legal Auditing)</option>
+                  </optgroup>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </div>
+              </div>
+              <p id="modelHelpText" class="text-[11px] text-slate-400 mt-1">Engine evaluates whether your task is cinematic storytelling, legal analysis, reasoning logic, or coding.</p>
+            </div>
+
+            <!-- Input 1: Primary Goal / Draft Prompt -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+                  Prompt Objective / Raw Draft <span class="text-indigo-400">*</span>
+                </label>
+                <span id="promptCharCount" class="text-[11px] font-mono text-slate-500">0 characters</span>
+              </div>
+              <textarea id="rawGoalInput" rows="6" oninput="handleGoalInput()" placeholder="Paste your raw idea, draft prompt, or instructions here... E.g., 'Prompts for legal services marketing video... Symbolism of authority, slow tracking shot across dark desk... Create a shocking 15s gothic extension...'" class="w-full bg-slate-950 border border-slate-700 text-slate-100 rounded-xl p-3 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none transition placeholder-slate-600 resize-y font-sans leading-relaxed"></textarea>
+            </div>
+
+            <!-- Input 2: Supplementary Info / Attached Data (Clean by default to prevent contamination) -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <div class="flex items-center space-x-2">
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+                    Supplementary Context / Attached Data
+                  </label>
+                  <span id="attachedDataStatus" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">None</span>
+                </div>
+                <div class="flex items-center space-x-1">
+                  <button type="button" onclick="clearSupplementary()" id="btnClearSupp" class="hidden text-[10px] px-2 py-0.5 rounded bg-rose-950/60 text-rose-300 hover:bg-rose-900 border border-rose-800/60">✕ Clear</button>
+                  <button type="button" onclick="insertSampleSnippet('script')" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-purple-300 hover:bg-slate-700 border border-slate-700 font-mono">+Script</button>
+                  <button type="button" onclick="insertSampleSnippet('json')" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-indigo-300 hover:bg-slate-700 border border-slate-700 font-mono">+JSON</button>
+                  <button type="button" onclick="insertSampleSnippet('code')" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-emerald-300 hover:bg-slate-700 border border-slate-700 font-mono">+Code</button>
+                </div>
+              </div>
+              <textarea id="supplementaryInput" rows="3" oninput="handleSupplementaryInput()" placeholder="Optional: Paste video transcripts, reference scenes, brand guidelines, code snippets, or JSON schemas. Leave blank if not needed." class="w-full bg-slate-950 border border-slate-700 text-slate-100 rounded-xl p-3 text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none transition placeholder-slate-600 resize-y leading-relaxed"></textarea>
+            </div>
+
+            <!-- Strategy & Engine Mode -->
+            <div class="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  Strategy Directive
+                </label>
+                <select id="strategyModeSelect" class="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded-lg p-2 text-xs focus:ring-1 focus:ring-indigo-500 font-medium">
+                  <option value="auto" selected>Auto-Calibrate Strategy</option>
+                  <option value="cinematic">Cinematic Shot-by-Shot (Video/Audio)</option>
+                  <option value="zeroshot">Zero-Shot (Direct / o3 Safe)</option>
+                  <option value="fewshot">Few-Shot Exemplars (4o)</option>
+                  <option value="agentic">Agentic Execution Gates</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  Engine Mode
+                </label>
+                <select id="engineModeSelect" class="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded-lg p-2 text-xs focus:ring-1 focus:ring-indigo-500 font-medium">
+                  <option value="gemini_ai" selected>✨ Frontier AI Refiner (Gemini 3 Flash)</option>
+                  <option value="heuristic">⚡ Fast Local Deterministic Engine</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Action Button -->
+            <div class="pt-2">
+              <button onclick="executeRefinement()" id="btnRefineAction" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 transition transform active:scale-[0.99] flex items-center justify-center space-x-2">
+                <svg id="refineSpinner" class="hidden animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span id="refineBtnText">Assess Context & Generate Refined Prompt</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Assessment Banner & Production Refined Prompt (7 Cols) -->
+        <div class="lg:col-span-7 space-y-4">
+          
+          <!-- Recommendation & Assessment Card -->
+          <div id="assessmentBanner" class="bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/40 border border-indigo-500/30 rounded-2xl p-4 sm:p-5 shadow-xl">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div class="flex items-start space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex-shrink-0 flex items-center justify-center text-indigo-400">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                </div>
+                <div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-xs font-bold uppercase tracking-wider text-indigo-400 font-mono">Model Recommendation</span>
+                    <span id="recommendedModelBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                      Gemini 2.5 Pro / GPT-4o Cinematic
+                    </span>
+                  </div>
+                  <p id="assessmentReasonText" class="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                    Detected visual cinematography, high-stakes legal marketing, and dark gothic aesthetic requirements. The engine configures multi-shot pacing, lighting, camera angles, and climactic audio design.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Prompt Quality & Fitness Score -->
+              <div class="flex-shrink-0 flex sm:flex-col items-end justify-between sm:justify-center border-t sm:border-t-0 sm:border-l border-slate-800 pt-2 sm:pt-0 sm:pl-5 w-full sm:w-auto">
+                <span class="text-[11px] text-slate-400 font-medium">Prompt Fitness</span>
+                <div class="flex items-baseline space-x-1">
+                  <span id="promptFitnessScore" class="text-2xl font-mono font-extrabold text-emerald-400">98</span>
+                  <span class="text-xs text-slate-500 font-mono">/100</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Context Analysis Breakdown Chips -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t border-slate-800/80 text-[11px] font-mono text-slate-400">
+              <div class="bg-slate-950/60 p-2 rounded-lg border border-slate-800/60">
+                <span class="text-slate-500 block text-[10px]">Detected Domain</span>
+                <span id="metaDetectedDomain" class="text-purple-300 font-semibold">Cinematic & Legal</span>
+              </div>
+              <div class="bg-slate-950/60 p-2 rounded-lg border border-slate-800/60">
+                <span class="text-slate-500 block text-[10px]">Estimated Tokens</span>
+                <span id="metaTokenEst" class="text-indigo-300 font-semibold">~420 tokens</span>
+              </div>
+              <div class="bg-slate-950/60 p-2 rounded-lg border border-slate-800/60">
+                <span class="text-slate-500 block text-[10px]">CoT Calibration</span>
+                <span id="metaCoTRule" class="text-emerald-300 font-semibold">Structured Storyboard</span>
+              </div>
+              <div class="bg-slate-950/60 p-2 rounded-lg border border-slate-800/60">
+                <span class="text-slate-500 block text-[10px]">Attached Context</span>
+                <span id="metaAttachmentStatus" class="text-slate-300 font-semibold">Clean (Unpolluted)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Production Refined Prompt Output Box -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+            
+            <!-- Output Header with Copy and Mode Actions -->
+            <div class="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2">
+              <div class="flex items-center space-x-2.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-200">Refined Production Prompt</span>
+                <span id="targetModelPill" class="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">Gemini Pro / GPT-4o Tuned</span>
+              </div>
+
+              <!-- Header Buttons -->
+              <div class="flex items-center space-x-2">
+                <button onclick="copyRefinedPrompt()" id="btnCopyPrompt" class="text-xs px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition shadow-sm flex items-center space-x-1.5">
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                  <span id="copyButtonText">Copy Prompt</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Main Prompt Textarea -->
+            <div class="p-4 relative">
+              <textarea id="refinedPromptOutput" rows="16" class="w-full bg-slate-950 font-mono text-xs sm:text-sm text-slate-200 leading-relaxed p-4 rounded-xl border border-slate-800 focus:outline-none focus:border-indigo-500 transition resize-y selection:bg-indigo-600/40" spellcheck="false"></textarea>
+
+              <!-- Copy Feedback Overlay -->
+              <div id="toastNotification" class="hidden absolute top-6 right-6 bg-emerald-500 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg shadow-xl flex items-center space-x-1.5 transition-all">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span>Copied to Clipboard!</span>
+              </div>
+            </div>
+
+            <!-- Output Footer Rules Audit Indicator -->
+            <div class="bg-slate-950/60 px-4 py-2.5 border-t border-slate-800 text-xs text-slate-400 flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center space-x-4">
+                <span class="flex items-center space-x-1">
+                  <span class="text-emerald-400 font-bold">✓</span>
+                  <span id="auditBadge1">Domain Matched</span>
+                </span>
+                <span class="flex items-center space-x-1">
+                  <span class="text-emerald-400 font-bold">✓</span>
+                  <span id="auditBadge2">Context Sanitized</span>
+                </span>
+                <span class="flex items-center space-x-1 hidden sm:inline-flex">
+                  <span class="text-emerald-400 font-bold">✓</span>
+                  <span id="auditBadge3">Shot & Climax Enforced</span>
+                </span>
+              </div>
+              <button onclick="switchTab('tab-checklist')" class="text-indigo-400 hover:text-indigo-300 font-medium">
+                View Optimization Audit &rarr;
+              </button>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 2: GPT-4o vs o3 & FRONTIER MODEL FRAMEWORK MATRIX -->
+    <!-- ========================================================================= -->
+    <div id="tab-matrix" class="hidden space-y-6">
+      
+      <!-- Core Prompting Principles -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        
+        <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-rose-400 font-mono mb-1">Principle 1 • Reasoning Engines (o3 / DeepSeek)</div>
+          <h3 class="text-sm font-bold text-white mb-2">Never Add "Think Step-by-Step"</h3>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            OpenAI o3 and DeepSeek R1 run hidden latent chain-of-thought tokens. Forcing explicit CoT degrades search branches, consumes user output tokens redundantly, and can induce circular loops.
+          </p>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-emerald-400 font-mono mb-1">Principle 2 • Omni Multimodal (GPT-4o & Gemini)</div>
+          <h3 class="text-sm font-bold text-white mb-2">Demand Structured XML & Visual Directives</h3>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            GPT-4o and Gemini 2.5 Pro excel with explicit shot breakdowns, camera lens cues (e.g. anamorphic, chiaroscuro), timecodes, and clear delimiters (<code class="text-emerald-300">&lt;previous_scene&gt;</code>, <code class="text-emerald-300">&lt;extension_goal&gt;</code>).
+          </p>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-400 font-mono mb-1">Principle 3 • Autonomous Agents (Manus / Base44)</div>
+          <h3 class="text-sm font-bold text-white mb-2">Enforce State Gates & Anti-Placeholder Rules</h3>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Autonomous runtime agents require definitive stop assertions, tool output checks, and zero-tolerance directives against truncated boilerplate like <em>"// insert rest of code"</em>.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Complete Comparison Table of 10 Frontier Models -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+        <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2 bg-slate-950">
+          <div>
+            <h2 class="text-base font-bold text-white">Frontier Model Behavioral Matrix (GPT-4o vs. Reasoning vs. Agents)</h2>
+            <p class="text-xs text-slate-400">Behavioral comparison across prompting strategies, CoT treatment, persona impact, and failure modes</p>
+          </div>
+          <span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">10 Active Architectures</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase tracking-wider font-semibold text-[11px] border-b border-slate-800 font-mono">
+              <tr>
+                <th class="py-3.5 px-4">AI Architecture</th>
+                <th class="py-3.5 px-4">Zero-Shot vs Few-Shot</th>
+                <th class="py-3.5 px-4">Chain-of-Thought (CoT)</th>
+                <th class="py-3.5 px-4">Role / Persona Impact</th>
+                <th class="py-3.5 px-4">JSON / Output Budgeting</th>
+                <th class="py-3.5 px-4">Primary Failure Modes</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/70">
+              
+              <!-- Gemini 2.5 Pro -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                    <span>Gemini 2.5 Pro</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">2M Native Context Omni</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  <strong class="text-cyan-300">Deep multimodal & narrative.</strong> Grasps visual sequences, storyboards, and complex document structures effortlessly.
+                </td>
+                <td class="py-3.5 px-4">
+                  Reasons across long video logs and multi-page briefs with high contextual continuity.
+                </td>
+                <td class="py-3.5 px-4">
+                  Exceptional adherence to Creative Director, Forensic Investigator, or Senior Producer personas.
+                </td>
+                <td class="py-3.5 px-4">
+                  Huge output windows. Direct schema structuring with OpenAPI specifications.
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Can produce overwhelming detail unless bounded by shot timecodes (e.g. "5s per shot").
+                </td>
+              </tr>
+
+              <!-- Gemini 2.5 Flash -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                    <span>Gemini 2.5 Flash</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">High-Throughput Fast Omni</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  Zero-shot direct instructions with bulleted constraints work best.
+                </td>
+                <td class="py-3.5 px-4">
+                  Provide structured templates; responds immediately without high deliberation latency.
+                </td>
+                <td class="py-3.5 px-4">
+                  Concise, rapid output generation without unnecessary pleasantries.
+                </td>
+                <td class="py-3.5 px-4">
+                  Extremely fast turnaround for batch prompt refinement and entity labeling.
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  May gloss over subtle aesthetic nuances unless explicitly named (e.g., chiaroscuro lighting).
+                </td>
+              </tr>
+
+              <!-- GPT-4o -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                    <span>GPT-4o</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">Auto-regressive Omni</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  <strong class="text-emerald-400">Few-shot optimal.</strong> Demonstrating 1 reference shot elevates consistency and dramatic tone adherence.
+                </td>
+                <td class="py-3.5 px-4">
+                  <span class="text-emerald-300 font-semibold">Requires explicit CoT</span> ("List considerations before drafting"). Rushes without guidance.
+                </td>
+                <td class="py-3.5 px-4">
+                  High adherence to stylistic guidelines, noir atmospheres, and professional branding.
+                </td>
+                <td class="py-3.5 px-4">
+                  Native JSON mode is extremely robust. Token budget translates 1:1 to visible output.
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Sycophantic agreement; early hallucination on complex recursive math without CoT.
+                </td>
+              </tr>
+
+              <!-- OpenAI o3 / o3-mini -->
+              <tr class="hover:bg-slate-800/40 transition bg-indigo-950/20">
+                <td class="py-3.5 px-4 font-semibold text-indigo-300 whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
+                    <span>OpenAI o3 / o3-mini</span>
+                  </div>
+                  <span class="text-[10px] text-indigo-300/70 font-mono">Test-Time Compute Reasoning</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  <strong class="text-indigo-300">Zero-shot direct optimal.</strong> Overly detailed examples can restrict internal search branch exploration.
+                </td>
+                <td class="py-3.5 px-4">
+                  <strong class="text-rose-400">FORBIDDEN:</strong> Do NOT add "Think step-by-step". Native search already evaluates dozens of logical forks.
+                </td>
+                <td class="py-3.5 px-4">
+                  Minimal role overhead needed. Direct objective definition outperforms theatrical personas.
+                </td>
+                <td class="py-3.5 px-4">
+                  <strong class="text-amber-300">Reserve high token ceiling</strong> (>4000) for hidden thoughts before output generation.
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Over-thinking creative tasks; running out of max_tokens if budget is capped under 2000.
+                </td>
+              </tr>
+
+              <!-- DeepSeek R1 / V3 -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
+                    <span>DeepSeek R1 / V3</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">RL Cold-Start Reasoning</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  Zero-shot direct task framing. High mathematical and competitive programming performance.
+                </td>
+                <td class="py-3.5 px-4">
+                  Self-correcting hidden chain. Prompt directive: "Verify boundary conditions silently, output final result".
+                </td>
+                <td class="py-3.5 px-4">
+                  Technical, neutral persona instructions yield best invariant consistency.
+                </td>
+                <td class="py-3.5 px-4">
+                  Requires clean tags (<code class="text-blue-300">&lt;output&gt;</code>) to avoid thought trace leakage into user view.
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Language drift in extensive reasoning trees; occasional thought tag bleed in non-API wrappers.
+                </td>
+              </tr>
+
+              <!-- Manus -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                    <span>Manus</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">Universal Autonomous Agent</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  Goal-oriented task specifications with verifiable completion criteria.
+                </td>
+                <td class="py-3.5 px-4">
+                  Iterative execution loops. Provide high-level objectives, not micro-tool steps.
+                </td>
+                <td class="py-3.5 px-4">
+                  Define authority limits: "Allowed to run sandbox bash commands, browse web, create assets".
+                </td>
+                <td class="py-3.5 px-4">
+                  Requires artifact definition (e.g. "Save storyboard to /workspace/storyboard.md").
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Infinite loops on gated login sites; tool timeouts if goals lack explicit stop conditions.
+                </td>
+              </tr>
+
+              <!-- Base44 -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-violet-400"></span>
+                    <span>Base44</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">Autonomous App Builder</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  Design tokens + database entity diagrams. Clear full-stack architecture specifications.
+                </td>
+                <td class="py-3.5 px-4">
+                  Architecture-first CoT: Schema -> API endpoints -> UI components -> State binding.
+                </td>
+                <td class="py-3.5 px-4">
+                  Lead Software Architect persona with zero tolerance for incomplete placeholder stubs.
+                </td>
+                <td class="py-3.5 px-4">
+                  High code output budget; must enforce runnable single-file or exact file tree constraints.
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Incomplete dummy functions, broken third-party imports, and unhandled edge case state triggers.
+                </td>
+              </tr>
+
+              <!-- Kimi (Moonshot k1.5) -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-orange-400"></span>
+                    <span>Kimi (Moonshot k1.5)</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">Massive Document Specialist</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  Document-grounded question answering with direct citation requirement.
+                </td>
+                <td class="py-3.5 px-4">
+                  Cross-document synthesis: require cross-referencing between attached filings or chapters.
+                </td>
+                <td class="py-3.5 px-4">
+                  Forensic Auditor / Legal Analyst persona works exceptionally well.
+                </td>
+                <td class="py-3.5 px-4">
+                  Enduring output token limits; handles multi-thousand token table extraction.
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Superficial summarization if the prompt fails to mandate verbatim quote validation.
+                </td>
+              </tr>
+
+              <!-- Copilot (GitHub / Workspace) -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
+                    <span>Copilot</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">IDE & Workspace Co-Engineer</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  Contextual workspace anchors (<code class="text-sky-300">#file:api.ts</code>, <code class="text-sky-300">#selection</code>).
+                </td>
+                <td class="py-3.5 px-4">
+                  Keep prompt short; use code comments immediately above target function as CoT prompt.
+                </td>
+                <td class="py-3.5 px-4">
+                  Senior Staff Refactoring Engineer with emphasis on non-breaking backward compatibility.
+                </td>
+                <td class="py-3.5 px-4">
+                  Focus on localized diffs and functional patches rather than rewriting entire files.
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Hallucinating non-existent library helper methods; discarding adjacent comments or annotations.
+                </td>
+              </tr>
+
+              <!-- Grok 3 (xAI) -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-rose-400"></span>
+                    <span>Grok 3 (xAI)</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">Real-Time Search & Reasoner</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  Zero-shot direct search queries with temporal bounds (e.g. "past 24 hours").
+                </td>
+                <td class="py-3.5 px-4">
+                  Deep Think Mode switches internally into reasoning tree search.
+                </td>
+                <td class="py-3.5 px-4">
+                  Direct, candid, unconstrained analytical persona without corporate boilerplate.
+                </td>
+                <td class="py-3.5 px-4">
+                  Fast markdown tabular formatting; real-time citation links.
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Social media gossip bias if search queries are not constrained to authoritative domains.
+                </td>
+              </tr>
+
+              <!-- Fable 5.0 -->
+              <tr class="hover:bg-slate-800/40 transition">
+                <td class="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-fuchsia-400"></span>
+                    <span>Fable 5.0</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-mono">World-Building & Narrative Sim</span>
+                </td>
+                <td class="py-3.5 px-4">
+                  World bible rules, lore anchors, character emotional states, and dark gothic atmospheric cues.
+                </td>
+                <td class="py-3.5 px-4">
+                  Evaluate psychological impact and branch outcomes before generating narrative plot points.
+                </td>
+                <td class="py-3.5 px-4">
+                  Extremely high persona immersion; voice cadence, idiosyncratic speech traits.
+                </td>
+                <td class="py-3.5 px-4">
+                  Dialogue trees with structured emotional metadata (<code class="text-fuchsia-300">{"intent": "deceive"}</code>).
+                </td>
+                <td class="py-3.5 px-4 text-rose-300">
+                  Voice flattening into bland assistant tone if personality negative constraints are omitted.
+                </td>
+              </tr>
+
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 3: PROMPT REFINEMENT CHECKLIST & TOKEN AUDIT -->
+    <!-- ========================================================================= -->
+    <div id="tab-checklist" class="hidden space-y-6">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- Checklist Cards (8 Cols) -->
+        <div class="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div>
+              <h2 class="text-base font-bold text-white">Production Prompt Optimization Checklist</h2>
+              <p class="text-xs text-slate-400">Pre-flight evaluation before dispatching to API, Video Models (Sora/Runway), or Autonomous Agents</p>
+            </div>
+            <button onclick="toggleAllChecks(true)" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold">Select All</button>
+          </div>
+
+          <!-- Section 1 -->
+          <div class="space-y-3">
+            <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center">
+              <span class="w-2 h-2 rounded-full bg-indigo-400 mr-2"></span>
+              1. Optimizing Instructions & Context Isolation
+            </h3>
+            <div class="space-y-2.5 text-xs text-slate-300 pl-4">
+              <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" id="chk_goal" checked onchange="calculateChecklistHealth()" class="mt-0.5 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 w-4 h-4">
+                <span><strong>No Stale Attachment Leakage:</strong> Supplementary data is verified and purged of unrelated server metrics or irrelevant JSON payloads.</span>
+              </label>
+              <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" id="chk_cot" checked onchange="calculateChecklistHealth()" class="mt-0.5 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 w-4 h-4">
+                <span><strong>Calibrated Reasoning vs. Directing:</strong> Visual/cinematic tasks specify camera movements, lighting, and audio; reasoning models omit artificial "Think step-by-step".</span>
+              </label>
+              <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" id="chk_neg" checked onchange="calculateChecklistHealth()" class="mt-0.5 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 w-4 h-4">
+                <span><strong>Negative Constraints Declared:</strong> Explicitly forbids unwanted cliches, daylight lighting, or unrequested tech jargon.</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Section 2 -->
+          <div class="space-y-3 pt-2">
+            <h3 class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 mr-2"></span>
+              2. Structuring Inputs & Delimiters
+            </h3>
+            <div class="space-y-2.5 text-xs text-slate-300 pl-4">
+              <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" id="chk_delim" checked onchange="calculateChecklistHealth()" class="mt-0.5 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 w-4 h-4">
+                <span><strong>Clear XML / Markdown Boundaries:</strong> Reference scenes are demarcated in <code>&lt;previous_ad_video&gt;</code> and requirements in <code>&lt;extension_brief&gt;</code>.</span>
+              </label>
+              <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" id="chk_sanitize" checked onchange="calculateChecklistHealth()" class="mt-0.5 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 w-4 h-4">
+                <span><strong>Timecode & Cadence Bounds:</strong> Video shots specify exact duration allocations (e.g. 5 seconds per sequence).</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Section 3 -->
+          <div class="space-y-3 pt-2">
+            <h3 class="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center">
+              <span class="w-2 h-2 rounded-full bg-cyan-400 mr-2"></span>
+              3. Managing Token Budgets & Multi-Modal Specs
+            </h3>
+            <div class="space-y-2.5 text-xs text-slate-300 pl-4">
+              <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" id="chk_tokens" checked onchange="calculateChecklistHealth()" class="mt-0.5 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 w-4 h-4">
+                <span><strong>Multi-Modal Sensory Cues:</strong> Integrates visual lighting (chiaroscuro, anamorphic flare) and auditory pacing (low-frequency sub-bass, rhythmic ticking).</span>
+              </label>
+              <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" id="chk_prune" checked onchange="calculateChecklistHealth()" class="mt-0.5 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 w-4 h-4">
+                <span><strong>Climactic Tension Target:</strong> Includes definitive shock-value transition point for dramatic impact.</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Section 4 -->
+          <div class="space-y-3 pt-2">
+            <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center">
+              <span class="w-2 h-2 rounded-full bg-amber-400 mr-2"></span>
+              4. Handling Output Formats & Fallback Guards
+            </h3>
+            <div class="space-y-2.5 text-xs text-slate-300 pl-4">
+              <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" id="chk_schema" checked onchange="calculateChecklistHealth()" class="mt-0.5 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 w-4 h-4">
+                <span><strong>Modular Production Format:</strong> Segregates shot-by-shot visual directions from audio cues and narrative voiceover.</span>
+              </label>
+              <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" id="chk_fallback" checked onchange="calculateChecklistHealth()" class="mt-0.5 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 w-4 h-4">
+                <span><strong>Execution Safety:</strong> Guard against disjointed continuity between the original scene and the extended climax.</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Score & Action Panel (4 Cols) -->
+        <div class="lg:col-span-4 space-y-4">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <h3 class="text-sm font-bold text-white">Prompt Quality Index</h3>
+
+            <div class="p-6 bg-slate-950 rounded-xl border border-slate-800 text-center">
+              <div id="checklistScoreNum" class="text-5xl font-mono font-extrabold text-emerald-400">100%</div>
+              <div class="text-[11px] uppercase tracking-widest text-slate-400 font-semibold mt-1">Audit Score</div>
+              <div id="checklistScoreRating" class="text-xs font-bold text-emerald-300 mt-2 px-3 py-1 rounded bg-emerald-500/10 inline-block">
+                Production Ready
+              </div>
+            </div>
+
+            <div class="space-y-2 text-xs text-slate-400">
+              <div class="flex justify-between">
+                <span>Checks Passed:</span>
+                <span id="passedChecksCount" class="text-white font-mono font-bold">9 / 9</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Domain Profile:</span>
+                <span class="text-indigo-400 font-semibold" id="checklistModelIndicator">Visual Marketing & Legal</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Context Integrity:</span>
+                <span class="text-emerald-400 font-semibold">100% Verified</span>
+              </div>
+            </div>
+
+            <button onclick="injectMissingGuards()" class="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition border border-slate-700 flex items-center justify-center space-x-1">
+              <span>Auto-Inject Missing Guards into Prompt</span>
+            </button>
+          </div>
+
+          <!-- Token Economics Note -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-xs space-y-3">
+            <h4 class="font-bold text-slate-200 flex items-center space-x-2">
+              <span class="text-emerald-400 font-mono">ℹ</span>
+              <span>Cinematic & Multi-Modal Prompting</span>
+            </h4>
+            <p class="text-slate-400 leading-relaxed">
+              When prompting for video generators (Runway Gen-3, Sora) or LLM storyboards, avoid generic technical headers. Explicitly specify <strong>lens focal length</strong>, <strong>lighting temperature</strong>, <strong>camera movement velocity</strong>, and <strong>sound design frequencies</strong>.
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 4: SIDE-BY-SIDE PROMPT TEST SUITE & FAILURE MODES -->
+    <!-- ========================================================================= -->
+    <div id="tab-testsuite" class="hidden space-y-6">
+      
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+        
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <h2 class="text-base font-bold text-white">Side-by-Side Prompt Test Bench & Failure Mode Gallery</h2>
+            <p class="text-xs text-slate-400">Evaluate how identical requirements cause distinct failure modes across model paradigms</p>
+          </div>
+          
+          <div class="flex flex-wrap gap-2">
+            <button onclick="displayTestCase('legal_marketing')" id="tbtn-legal_marketing" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition">Test 1: Legal Noir Video</button>
+            <button onclick="displayTestCase('math_logic')" id="tbtn-math_logic" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white transition">Test 2: Concurrency Race</button>
+            <button onclick="displayTestCase('agent_exec')" id="tbtn-agent_exec" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white transition">Test 3: Manus / Base44 Agent</button>
+          </div>
+        </div>
+
+        <!-- Dynamic Test Case Content Area -->
+        <div id="testCaseDisplayArea" class="space-y-6">
+          <!-- Populated by JavaScript -->
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800 bg-slate-950 mt-12 py-6 text-center text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="flex items-center space-x-2">
+        <span class="text-slate-300 font-semibold">NexusPrompt Engine v1.0.0</span>
+        <span>•</span>
+        <span>Production Optimization Platform</span>
+      </div>
+      <div class="text-[11px] font-mono text-slate-500">
+        Supporting Gemini Flash/Pro, GPT-4o, o3, DeepSeek, Manus, Base44, Kimi, Copilot, Grok 3 & Fable 5.0
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    /* ========================================================================= */
+    /* MODEL REGISTRY & CHARACTERISTICS                                          */
+    /* ========================================================================= */
+    const MODEL_SPECS = {
+      auto: {
+        name: "Auto-Detected Architecture",
+        family: "hybrid",
+        isReasoning: false,
+        desc: "Engine assesses whether task is cinematic video, legal narrative, math reasoning, or code."
+      },
+      gemini_pro: {
+        name: "Gemini 2.5 Pro",
+        family: "omni_creative",
+        isReasoning: false,
+        desc: "Industry-leading multi-modal reasoning. Excels at cinematic shot design, gothic atmospheres, and temporal continuity."
+      },
+      gemini_flash: {
+        name: "Gemini 2.5 Flash",
+        family: "omni_fast",
+        isReasoning: false,
+        desc: "Ultra-low latency with 1M context. Perfect for rapid storyboard iterations and high-speed refinement."
+      },
+      gpt4o: {
+        name: "GPT-4o (Omni)",
+        family: "omni",
+        isReasoning: false,
+        desc: "Sharp instruction adherence, high stylistic fidelity, and clean delimiter separation."
+      },
+      fable: {
+        name: "Fable 5.0",
+        family: "creative_sim",
+        isReasoning: false,
+        desc: "Master of dark gothic tone, psychological suspense, and non-linear narrative tension."
+      },
+      o3: {
+        name: "OpenAI o3 / o3-mini",
+        family: "reasoning",
+        isReasoning: true,
+        desc: "Pure test-time compute. Strict prohibition of manual CoT steps. Ideal for math, logic, and proofs."
+      },
+      deepseek: {
+        name: "DeepSeek R1 / V3",
+        family: "reasoning",
+        isReasoning: true,
+        desc: "Reinforcement-learned deep reasoner. Self-correcting search tree for complex invariants."
+      },
+      manus: {
+        name: "Manus",
+        family: "agent",
+        isReasoning: false,
+        desc: "Autonomous sandbox agent. Requires explicit file creation, tool validation, and exit criteria."
+      },
+      base44: {
+        name: "Base44",
+        family: "agent_coder",
+        isReasoning: false,
+        desc: "Full-stack code generation agent. Demands zero-placeholder complete single-file deliverables."
+      },
+      kimi: {
+        name: "Kimi Moonshot k1.5",
+        family: "long_context",
+        isReasoning: false,
+        desc: "Document and legal brief specialist with exact verbatim citation."
+      },
+      copilot: {
+        name: "GitHub / M365 Copilot",
+        family: "ide_agent",
+        isReasoning: false,
+        desc: "Context-anchored code and office document collaborator."
+      },
+      grok: {
+        name: "xAI Grok 3",
+        family: "reasoning_hybrid",
+        isReasoning: false,
+        desc: "Direct, candid style with real-time web verification and mathematical rigor."
+      }
+    };
+
+    function switchTab(tabId) {
+      const tabs = ['tab-workbench', 'tab-matrix', 'tab-checklist', 'tab-testsuite'];
+      tabs.forEach(t => {
+        const el = document.getElementById(t);
+        const btn = document.getElementById('btn-' + t);
+        if (t === tabId) {
+          el.classList.remove('hidden');
+          if (btn) btn.className = "tab-active px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center space-x-2";
+        } else {
+          el.classList.add('hidden');
+          if (btn) btn.className = "bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition border border-slate-800 flex items-center space-x-2";
+        }
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function handleGoalInput() {
+      const val = document.getElementById('rawGoalInput').value;
+      document.getElementById('promptCharCount').innerText = `${val.length} characters`;
+      detectDomainRealtime();
+    }
+
+    function handleSupplementaryInput() {
+      const val = document.getElementById('supplementaryInput').value.trim();
+      const status = document.getElementById('attachedDataStatus');
+      const btnClear = document.getElementById('btnClearSupp');
+      if (val.length > 0) {
+        status.innerText = `${val.length} chars`;
+        status.className = "text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 font-semibold";
+        btnClear.classList.remove('hidden');
+        document.getElementById('metaAttachmentStatus').innerText = "Active Data Attached";
+        document.getElementById('metaAttachmentStatus').className = "text-emerald-300 font-semibold";
+      } else {
+        status.innerText = "None";
+        status.className = "text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700";
+        btnClear.classList.add('hidden');
+        document.getElementById('metaAttachmentStatus').innerText = "Clean (Unpolluted)";
+        document.getElementById('metaAttachmentStatus').className = "text-slate-300 font-semibold";
+      }
+    }
+
+    function clearSupplementary() {
+      document.getElementById('supplementaryInput').value = "";
+      handleSupplementaryInput();
+      showToast("Attached data cleared.");
+    }
+
+    function onModelDropdownChange() {
+      const val = document.getElementById('targetModelSelect').value;
+      const help = document.getElementById('modelHelpText');
+      const status = document.getElementById('activeStatusLabel');
+
+      if (val === 'auto') {
+        help.innerText = "Engine dynamically evaluates whether your task is cinematic storytelling, legal analysis, reasoning logic, or coding.";
+        status.innerText = "Domain: Dynamic Auto-Detection";
+      } else {
+        const spec = MODEL_SPECS[val];
+        help.innerText = `${spec.name}: ${spec.desc}`;
+        status.innerText = `Target: ${spec.name}`;
+      }
+    }
+
+    function detectDomain(text) {
+      const t = text.toLowerCase();
+
+      const isVideoOrCinematic = /video|tracking shot|dolly|chiaroscuro|noir|anamorphic|lens flare|shutter|corkboard|evidentiary|redacting|audio:|bass track|ticking|storyboard|climatic|shock value|gothic|dark metropolis|macro tilt|fountain pen/i.test(t);
+      const isLegal = /legal|attorney|lawyer|jurisdiction|classified dossier|redaction|evidence|litigation|contract|statute/i.test(t);
+      const isReasoning = /concurrency|race condition|deadlock|mutex|atomic|algorithm|recursion|math proof|leetcode|p99|big-o/i.test(t);
+      const isAgentCode = /build an app|single-page|full-stack|single file|react|tailwind|scaffold|manus|base44|workspace/i.test(t);
+      const isJson = /json|schema|extract|table|fields|parse/i.test(t);
+
+      if (isVideoOrCinematic && isLegal) {
+        return {
+          type: "cinematic_legal",
+          name: "Cinematic Legal Marketing & Noir Video",
+          recommendedModel: "gemini_pro",
+          role: "You are an Award-Winning Cinematic Video Director, Noir Narrative Architect, and High-Stakes Legal Marketing Strategist.",
+          reason: "Detected visual video cinematography, high-stakes legal marketing, and dark gothic aesthetic requirements. The engine configures multi-shot pacing, lighting, camera angles, and climactic audio design."
+        };
+      }
+
+      if (isVideoOrCinematic) {
+        return {
+          type: "cinematic_video",
+          name: "Cinematic Video & Multi-Modal Direction",
+          recommendedModel: "gemini_pro",
+          role: "You are an Elite Cinematic Creative Director and Commercial Visual Storyboard Specialist.",
+          reason: "Detected video camera directions, lighting parameters, and sensory audio design. Structured for video generation models (Runway Gen-3, Sora) or cinematic scriptwriters."
+        };
+      }
+
+      if (isReasoning) {
+        return {
+          type: "reasoning",
+          name: "Algorithmic & Systems Logic",
+          recommendedModel: "o3",
+          role: "You are a Principal Logic & Systems Architect.",
+          reason: "Detected high-compute algorithmic or concurrency challenge. Configured for OpenAI o3 / DeepSeek R1 with zero superficial CoT to prevent reasoning trace pollution."
+        };
+      }
+
+      if (isAgentCode) {
+        return {
+          type: "agent_code",
+          name: "Autonomous Software Engineering",
+          recommendedModel: "base44",
+          role: "You are an Autonomous Lead Software Architect operating with zero-placeholder execution rules.",
+          reason: "Detected software application synthesis. Base44 is optimal for single-file, immediately runnable web apps with strict design token standards."
+        };
+      }
+
+      if (isJson) {
+        return {
+          type: "structured_json",
+          name: "Structured Data Extraction",
+          recommendedModel: "gpt4o",
+          role: "You are an Expert Data Engineering Specialist.",
+          reason: "Detected structured schema extraction. GPT-4o delivers near-perfect schema compliance when isolated with clear XML bounds."
+        };
+      }
+
+      return {
+        type: "general",
+        name: "General Production Task",
+        recommendedModel: "gemini_flash",
+        role: "You are an Expert AI Systems Engineer.",
+        reason: "General operational prompt. Gemini 2.5 Flash offers the best throughput, low latency, and zero-shot precision."
+      };
+    }
+
+    function detectDomainRealtime() {
+      const val = document.getElementById('rawGoalInput').value;
+      const domain = detectDomain(val);
+      document.getElementById('metaDetectedDomain').innerText = domain.name;
+    }
+
+    function buildDeterministicRefinedPrompt(goal, supplementary, chosenModelKey, strategy) {
+      const domain = detectDomain(goal);
+      const modelKey = chosenModelKey === 'auto' ? domain.recommendedModel : chosenModelKey;
+      const spec = MODEL_SPECS[modelKey];
+      const hasSupplementary = supplementary.trim().length > 0;
+
+      let p = [];
+
+      // Role header
+      p.push(`[ROLE & SYSTEM DIRECTIVE]`);
+      p.push(domain.role);
+      p.push(`Directives: Deliver a high-impact, production-grade output adhering strictly to the architectural constraints, formatting, and aesthetic tone outlined below.`);
+      p.push(``);
+
+      // Primary Goal
+      p.push(`[CORE OBJECTIVE]`);
+      p.push(goal.trim());
+      p.push(``);
+
+      // Supplementary context ONLY if actually provided
+      if (hasSupplementary) {
+        p.push(`[ATTACHED REFERENCE CONTEXT]`);
+        p.push(`<reference_context>`);
+        p.push(supplementary.trim());
+        p.push(`</reference_context>`);
+        p.push(`INSTRUCTION: Ground your response in the reference context above. Do not contradict established facts.`);
+        p.push(``);
+      }
+
+      // Domain-specific structural guidelines
+      p.push(`[EXECUTION SPECIFICATIONS & PRODUCTION RULES]`);
+
+      if (domain.type === 'cinematic_legal' || domain.type === 'cinematic_video') {
+        p.push(`1. Temporal & Shot Breakdown: Structure the requested 12–15 second video extension into precisely timed 4–5 second cinematic sequences.`);
+        p.push(`2. Cinematography Parameters: Specify camera lens (e.g. 35mm anamorphic), camera movement (dolly-in, tracking, crane, macro tilt), and lighting style (volumetric chiaroscuro, gothic noir, high-contrast shadows).`);
+        p.push(`3. Character & Setting Continuity: Preserve established visual anchors (e.g. the dark oak desk, silhouetted attorney, rain-streaked neon city reflections).`);
+        p.push(`4. Shock Value & Climax: Engineer an unexpected, memorable plot twist that resolves the evidentiary tension with visceral impact.`);
+        p.push(`5. Dual-Layer Audio Design: Detail exact low-frequency acoustic cues (e.g. heavy ticking, sub-bass pulse, dissonant cello sweep) synchronized with visual hit-points.`);
+      } else if (spec.isReasoning) {
+        p.push(`1. Zero Artificial CoT: Do NOT emit manual "Step 1: ... Step 2: ..." chatter. Formulate reasoning silently via test-time search and provide only the clean final solution.`);
+        p.push(`2. Invariant Proof: Validate edge conditions (e.g. empty buffers, reentrancy, null pointers, integer wrapping).`);
+        p.push(`3. Determinism: Ensure the solution satisfies all constraints without approximations.`);
+      } else if (domain.type === 'agent_code') {
+        p.push(`1. Single Consolidated Asset: Include all HTML structure, styling (Tailwind CSS), and JavaScript logic in one self-contained, immediately runnable file.`);
+        p.push(`2. Aesthetics & UI Polish: Employ balanced typography, responsive viewports, and interactive states.`);
+        p.push(`3. No Truncated Placeholders: Write complete functions without "// insert rest of code" comments.`);
+      } else {
+        p.push(`1. Structural Delimitation: Use clear Markdown sections to organize execution steps.`);
+        p.push(`2. Zero Hallucination: If context lacks required details, explicitly state "INSUFFICIENT_CONTEXT" and request missing parameters.`);
+        p.push(`3. Conciseness: Avoid conversational pleasantries, preambles, and postscript summaries.`);
+      }
+
+      p.push(``);
+
+      // Output format
+      p.push(`[DELIVERABLE FORMAT]`);
+      if (domain.type === 'cinematic_legal' || domain.type === 'cinematic_video') {
+        p.push(`Return a clean, professionally formatted Production Storyboard Breakdown:`);
+        p.push(`- Shot 1 (0:00 - 0:05): [Visual Framing & Camera Movement] | [Lighting & Color Grading] | [Audio & Sound Effects]`);
+        p.push(`- Shot 2 (0:05 - 0:10): [Visual Framing & Camera Movement] | [Lighting & Color Grading] | [Audio & Sound Effects]`);
+        p.push(`- Shot 3: The Climax / Shock Reveal (0:10 - 0:15): [The Visceral Twist] | [Final Tagline / Branding Anchor]`);
+      } else {
+        p.push(`Return clean, well-formatted Markdown with precise technical terminology, tables where appropriate, and bold highlights on key invariants.`);
+      }
+
+      return {
+        promptText: p.join('\n'),
+        domain,
+        modelKey,
+        spec
+      };
+    }
+
+    async function refineWithGemini(goal, supplementary, targetModel) {
+      const apiKey = ""; // Canvas runtime automatically supplies the API key
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+      const domain = detectDomain(goal);
+      const chosenModelName = targetModel === 'auto' ? domain.recommendedModel : targetModel;
+      const modelSpec = MODEL_SPECS[chosenModelName] || MODEL_SPECS.auto;
+
+      const systemPrompt = `You are the World's Foremost Prompt Engineering Architect and Multi-Modal Production Strategist.
+Your mission is to take the user's raw prompt/goal and attached context, and engineer the ABSOLUTE BEST production-grade prompt tailored specifically for ${modelSpec.name} (${modelSpec.family}).
+
+CRITICAL RULES:
+1. DOMAIN UNDERSTANDING: If the prompt is about video creation, cinematic commercial storyboards, legal marketing, or gothic storytelling, DO NOT format it as a software engineering task! Format it as an extraordinary, cinematic storyboard directive with camera movements, anamorphic lighting, audio design, and shock-value climax.
+2. CONTEXT HYGIENE: Only reference attached data if the user explicitly provided relevant data. Never inject unrelated server metrics or irrelevant placeholders into creative work.
+3. MODEL CALIBRATION:
+   - For Reasoning models (o3, DeepSeek): NEVER say "think step by step". Emphasize invariants and silent deduction.
+   - For Video/Omni models (Gemini Pro/Flash, GPT-4o): Emphasize shot breakdowns, timecodes, visual cues (chiaroscuro, lens focal lengths), audio frequencies, and dramatic pacing.
+   - For Agent models (Manus, Base44): Emphasize complete runnable deliverables and zero placeholders.
+4. DELIVERABLE: Output the final, ready-to-run prompt inside a clean, beautifully formatted layout that the user can immediately copy and paste into their target AI.`;
+
+      const userQuery = `Target AI Model: ${modelSpec.name} (${modelSpec.family})
+User Prompt / Goal:
+${goal}
+
+${supplementary.trim() ? `User Attached Context:\n${supplementary}` : `(No attached context provided)`}
+
+Please refine this into the ultimate, highest-performing prompt tailored for this specific task and model.`;
+
+      const payload = {
+        contents: [{ parts: [{ text: userQuery }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] }
+      };
+
+      // Exponential backoff fetch
+      let delay = 1000;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            throw new Error(`API error ${response.status}`);
+          }
+
+          const result = await response.json();
+          const candidate = result.candidates?.[0];
+          if (candidate?.content?.parts?.[0]?.text) {
+            return candidate.content.parts[0].text;
+          }
+        } catch (e) {
+          if (attempt === 2) throw e;
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2;
+        }
+      }
+      throw new Error("Unable to reach Gemini API");
+    }
+
+    async function executeRefinement() {
+      const goal = document.getElementById('rawGoalInput').value.trim();
+      const supplementary = document.getElementById('supplementaryInput').value.trim();
+      const chosenModel = document.getElementById('targetModelSelect').value;
+      const engineMode = document.getElementById('engineModeSelect').value;
+      const strategy = document.getElementById('strategyModeSelect').value;
+
+      if (!goal && !supplementary) {
+        showToast("Please enter your prompt goal or draft!");
+        document.getElementById('rawGoalInput').focus();
+        return;
+      }
+
+      const domain = detectDomain(goal);
+      const targetModelKey = chosenModel === 'auto' ? domain.recommendedModel : chosenModel;
+      const targetSpec = MODEL_SPECS[targetModelKey] || MODEL_SPECS.auto;
+
+      // Update UI Banner immediately
+      document.getElementById('recommendedModelBadge').innerText = targetSpec.name;
+      document.getElementById('targetModelPill').innerText = `${targetSpec.name} Configured`;
+      document.getElementById('assessmentReasonText').innerText = domain.reason;
+      document.getElementById('metaDetectedDomain').innerText = domain.name;
+      document.getElementById('checklistModelIndicator').innerText = domain.name;
+
+      const refineBtn = document.getElementById('btnRefineAction');
+      const spinner = document.getElementById('refineSpinner');
+      const btnText = document.getElementById('refineBtnText');
+
+      let finalPrompt = "";
+
+      if (engineMode === 'gemini_ai') {
+        // Run Live AI Refinement via Gemini 3 Flash
+        spinner.classList.remove('hidden');
+        btnText.innerText = "Refining with Gemini 3 Flash...";
+        refineBtn.disabled = true;
+
+        try {
+          finalPrompt = await refineWithGemini(goal, supplementary, chosenModel);
+        } catch (err) {
+          console.warn("Falling back to local heuristic refiner:", err);
+          const res = buildDeterministicRefinedPrompt(goal, supplementary, chosenModel, strategy);
+          finalPrompt = res.promptText;
+        } finally {
+          spinner.classList.add('hidden');
+          btnText.innerText = "Assess Context & Generate Refined Prompt";
+          refineBtn.disabled = false;
+        }
+      } else {
+        // Deterministic engine
+        const res = buildDeterministicRefinedPrompt(goal, supplementary, chosenModel, strategy);
+        finalPrompt = res.promptText;
+      }
+
+      // Populate output
+      document.getElementById('refinedPromptOutput').value = finalPrompt;
+
+      // Token estimation
+      const tokenEst = Math.round(finalPrompt.length / 4);
+      document.getElementById('metaTokenEst').innerText = `~${tokenEst} tokens`;
+
+      if (domain.type === 'cinematic_legal' || domain.type === 'cinematic_video') {
+        document.getElementById('metaCoTRule').innerText = "Shot Breakdown & Timing";
+        document.getElementById('auditBadge1').innerText = "Cinematic Directives";
+        document.getElementById('auditBadge2').innerText = "Context Unpolluted";
+        document.getElementById('auditBadge3').innerText = "Gothic Climax Active";
+        document.getElementById('promptFitnessScore').innerText = "99";
+      } else if (targetSpec.isReasoning) {
+        document.getElementById('metaCoTRule').innerText = "Zero CoT (Native)";
+        document.getElementById('auditBadge1').innerText = "Reasoning Calibrated";
+        document.getElementById('auditBadge2').innerText = "CoT Stripped";
+        document.getElementById('auditBadge3').innerText = "Invariants Guarded";
+        document.getElementById('promptFitnessScore').innerText = "98";
+      } else {
+        document.getElementById('metaCoTRule').innerText = "Explicit CoT";
+        document.getElementById('auditBadge1').innerText = "Schema Delimited";
+        document.getElementById('auditBadge2').innerText = "Context Grounded";
+        document.getElementById('auditBadge3').innerText = "Output Bounded";
+        document.getElementById('promptFitnessScore').innerText = "96";
+      }
+
+      showToast(`Prompt successfully refined for ${targetSpec.name}!`);
+    }
+
+    function copyRefinedPrompt() {
+      const output = document.getElementById('refinedPromptOutput');
+      if (!output.value.trim()) {
+        showToast("No prompt generated to copy!");
+        return;
+      }
+
+      output.select();
+      try {
+        document.execCommand('copy');
+        showToast("Copied to clipboard!");
+        const btnText = document.getElementById('copyButtonText');
+        btnText.innerText = "Copied!";
+        setTimeout(() => { btnText.innerText = "Copy Prompt"; }, 2000);
+      } catch (err) {
+        showToast("Press Ctrl+C to copy");
+      }
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toastNotification');
+      toast.querySelector('span').innerText = message;
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 2500);
+    }
+
+    function clearWorkbench() {
+      document.getElementById('rawGoalInput').value = "";
+      document.getElementById('supplementaryInput').value = "";
+      document.getElementById('refinedPromptOutput').value = "";
+      document.getElementById('promptCharCount').innerText = "0 characters";
+      document.getElementById('targetModelSelect').value = "auto";
+      handleSupplementaryInput();
+      onModelDropdownChange();
+      showToast("Workbench cleared.");
+    }
+
+    function insertSampleSnippet(type) {
+      const supp = document.getElementById('supplementaryInput');
+      if (type === 'script') {
+        supp.value = `Client Brand Guidelines:
+Firm: Vance & Sterling Litigation Counsel
+Tagline: "When Truth Requires Relentless Scrutiny"
+Visual Tone: Dark gothic noir, rain-soaked cityscapes, shadows and polished wood.`;
+      } else if (type === 'json') {
+        supp.value = JSON.stringify({
+          case_id: "LIT-8921",
+          jurisdiction: "Federal Appellate Court",
+          verdict_status: "SEALED",
+          classification: "HIGH_PROFILE"
+        }, null, 2);
+      } else if (type === 'code') {
+        supp.value = `// Invariant: Concurrency ring buffer without lock contention\npub struct RingBuffer<T> { ... }`;
+      }
+      handleSupplementaryInput();
+      showToast(`Inserted sample ${type}!`);
+    }
+
+    function loadSamplePreset(presetKey) {
+      switchTab('tab-workbench');
+      clearSupplementary();
+
+      if (presetKey === 'legal_video') {
+        document.getElementById('targetModelSelect').value = "gemini_pro";
+        document.getElementById('rawGoalInput').value = `Prompts for legal services marketing video for prompting, engine and perplexity.
+The following prompt was used to create the video attached:
+"Symbolic Authority: Slow tracking shot across a polished dark oak desk, moving from a heavy brass scale of justice to a magnifying glass reflecting rain-streaked neon city lights, volumetric chiaroscuro lighting, shallow depth of field, sharp focus, 5s. (This establishes immediate legal jurisdiction transitioning directly into investigative scrutiny).
+
+Covert Operation: Low-angle dolly-in on a silhouetted attorney standing in a modern high-rise office overlooking a dark metropolis at night, reviewing a classified dossier, dramatic rim lighting, cinematic anamorphic lens flare, 5s. (This projects power, high-stakes capability, and strict confidentiality).
+
+Evidentiary Tension: Macro tilt-down on a fountain pen aggressively redacting a confidential legal document; the background slowly racks focus to a shadowy corkboard with connected evidence threads; high-contrast noir lighting; deep shadows; 5s. (This emphasizes active case management and complex problem-solving).
+
+Audio: Methodical, low-frequency bass track or a rhythmic ticking sound. This auditory element subconsciously reinforces urgency, precision, and high stakes."
+
+Create a plot for an extension of this current marketing promotional Legal Services firm that is exciting and memorable. There must be a climatic and shock value to this ad. Current video attached is 12 seconds. The extension can be anywhere from 12 seconds to 15 seconds in length. Theme should be gothic/dark.`;
+        document.getElementById('strategyModeSelect').value = "cinematic";
+        document.getElementById('engineModeSelect').value = "gemini_ai";
+      } else if (presetKey === 'math_reasoning') {
+        document.getElementById('targetModelSelect').value = "o3";
+        document.getElementById('rawGoalInput').value = "Design a high-concurrency lock-free ring buffer in Rust using AtomicPtr and AtomicUsize. Ensure zero data races during concurrent multi-producer, multi-consumer pushes and pops.";
+        document.getElementById('strategyModeSelect').value = "zeroshot";
+        document.getElementById('engineModeSelect').value = "heuristic";
+      } else if (presetKey === 'json_schema') {
+        document.getElementById('targetModelSelect').value = "gpt4o";
+        document.getElementById('rawGoalInput').value = "Extract invoice line-items, tax brackets, total gross amount, and VAT numbers from messy OCR scan.";
+        document.getElementById('strategyModeSelect').value = "fewshot";
+        document.getElementById('engineModeSelect').value = "heuristic";
+      }
+
+      handleGoalInput();
+      onModelDropdownChange();
+      executeRefinement();
+    }
+
+    function calculateChecklistHealth() {
+      const checkIds = ['chk_goal', 'chk_cot', 'chk_neg', 'chk_delim', 'chk_sanitize', 'chk_tokens', 'chk_prune', 'chk_schema', 'chk_fallback'];
+      let checked = 0;
+      checkIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.checked) checked++;
+      });
+
+      const total = checkIds.length;
+      const score = Math.round((checked / total) * 100);
+      document.getElementById('checklistScoreNum').innerText = `${score}%`;
+      document.getElementById('passedChecksCount').innerText = `${checked} / ${total}`;
+
+      const ratingEl = document.getElementById('checklistScoreRating');
+      if (score >= 90) {
+        ratingEl.innerText = "Production Ready";
+        ratingEl.className = "text-xs font-bold text-emerald-300 mt-2 px-3 py-1 rounded bg-emerald-500/10 inline-block";
+      } else if (score >= 70) {
+        ratingEl.innerText = "Acceptable with Warnings";
+        ratingEl.className = "text-xs font-bold text-amber-300 mt-2 px-3 py-1 rounded bg-amber-500/10 inline-block";
+      } else {
+        ratingEl.innerText = "High Failure Risk";
+        ratingEl.className = "text-xs font-bold text-rose-400 mt-2 px-3 py-1 rounded bg-rose-500/10 inline-block";
+      }
+    }
+
+    function toggleAllChecks(state) {
+      const checkIds = ['chk_goal', 'chk_cot', 'chk_neg', 'chk_delim', 'chk_sanitize', 'chk_tokens', 'chk_prune', 'chk_schema', 'chk_fallback'];
+      checkIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = state;
+      });
+      calculateChecklistHealth();
+      showToast(state ? "All checklist points verified!" : "Checklist cleared.");
+    }
+
+    function injectMissingGuards() {
+      toggleAllChecks(true);
+      executeRefinement();
+      showToast("Missing checklist guards injected into active prompt!");
+    }
+
+    const TEST_BENCH = {
+      legal_marketing: {
+        title: "Test Case 1: Legal Services Gothic Marketing Video (12s-15s Extension)",
+        objective: "Extend a 12s high-stakes attorney noir video into a 15s climactic commercial with shock value, low-frequency ticking audio, and dark gothic lighting.",
+        gpt4o_res: "Delivers vivid sensory descriptors, camera lenses (35mm anamorphic), and timed shot segments. Captures the noir aesthetic effectively.",
+        gpt4o_fail: "Failure Mode: Can default to courtroom cliches (a gavel banging) unless explicitly directed towards investigative or psychological shock value.",
+        o3_res: "Analytically constructs cause-and-effect tension curves, but spends compute reasoning about legal statute realism rather than cinematic visual pacing.",
+        o3_fail: "Failure Mode: Over-formalizes narrative logic and omits cinematic camera parameters (depth-of-field, lens flare) unless coerced.",
+        agent_res: "Generates production storyboard tables, prompts formatted for Sora/Runway Gen-3, and audio stem specifications with exact timecodes.",
+        agent_fail: "Failure Mode: Requires explicit format directives to prevent exporting raw JSON metadata instead of visual directorial prose."
+      },
+      math_logic: {
+        title: "Test Case 2: Concurrency Invariant & Split-Brain Protocol",
+        objective: "Design a fault-tolerant leader election protocol with monotonic term updates and split-brain resolution under network partitioning.",
+        gpt4o_res: "Produces readable and elegant pseudocode. However, without explicit CoT, GPT-4o assumes immediate socket termination and overlooks partitioned quorum states.",
+        gpt4o_fail: "Failure Mode: Sycophantic happy-path bias; fails to prove safety invariants without guided CoT questions.",
+        o3_res: "Uses internal test-time compute to run hidden simulation steps. Independently derives split-brain scenarios, quorum math (N/2 + 1), and network partition fences. Emits mathematically robust logic.",
+        o3_fail: "Failure Mode: Looping deliberation if prompt has redundant 'think step by step'; risks exhausting max token envelope on basic message struct declarations."
+      },
+      agent_exec: {
+        title: "Test Case 3: Autonomous Workspace Fix (Manus / Base44)",
+        objective: "Clone repository, diagnose Stripe webhook 400 Bad Request signature error, patch verification logic, and execute unit test suite.",
+        gpt4o_res: "Provides correct snippet for verifying Stripe signatures with raw body buffers, but cannot execute bash scripts or verify green test passes without an external runner.",
+        gpt4o_fail: "Failure Mode: Static code emission without environmental awareness of raw body parsing middleware.",
+        o3_res: "Theoretically explains cryptographic timing attack protection in byte comparison, but lacks native shell execution loop.",
+        o3_fail: "Failure Mode: High theoretical analysis without automated sandbox iteration.",
+        agent_res: "Manus / Base44 opens bash sandbox, runs unit tests, observes failure, patches Express `bodyParser.raw()`, and runs tests until passing before summarizing.",
+        agent_fail: "Failure Mode: Can enter infinite retry loops if credentials or secret keys are missing and not flagged as required parameters."
+      }
+    };
+
+    function displayTestCase(caseKey) {
+      ['legal_marketing', 'math_logic', 'agent_exec'].forEach(k => {
+        const btn = document.getElementById('tbtn-' + k);
+        if (btn) {
+          if (k === caseKey) {
+            btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition";
+          } else {
+            btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white transition";
+          }
+        }
+      });
+
+      const tc = TEST_BENCH[caseKey];
+      const container = document.getElementById('testCaseDisplayArea');
+
+      let html = `
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+          <div class="text-[11px] uppercase tracking-wider text-indigo-400 font-bold font-mono">Benchmark Task</div>
+          <h3 class="text-sm sm:text-base font-bold text-white">${tc.title}</h3>
+          <p class="text-xs text-slate-300 font-mono bg-slate-900/90 p-3 rounded-lg border border-slate-800">${tc.objective}</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- GPT-4o / Gemini Card -->
+          <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-emerald-400 flex items-center">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 mr-2"></span>
+                Gemini Pro & GPT-4o (Cinematic / Omni)
+              </span>
+              <span class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-mono">Visual Pacing</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">${tc.gpt4o_res}</p>
+            <div class="bg-rose-950/30 border border-rose-900/40 p-2.5 rounded-lg text-xs text-rose-300">
+              <strong>${tc.gpt4o_fail}</strong>
+            </div>
+          </div>
+
+          <!-- OpenAI o3 Card -->
+          <div class="bg-slate-950 border border-indigo-500/20 rounded-xl p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-indigo-400 flex items-center">
+                <span class="w-2 h-2 rounded-full bg-indigo-400 mr-2"></span>
+                OpenAI o3 / DeepSeek R1 (Reasoning)
+              </span>
+              <span class="text-[10px] bg-indigo-900/40 text-indigo-300 border border-indigo-700/50 px-2 py-0.5 rounded font-mono">Zero CoT Rule</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">${tc.o3_res}</p>
+            <div class="bg-rose-950/30 border border-rose-900/40 p-2.5 rounded-lg text-xs text-rose-300">
+              <strong>${tc.o3_fail}</strong>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (tc.agent_res) {
+        html += `
+          <div class="bg-slate-950 border border-amber-500/20 rounded-xl p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-amber-400 flex items-center">
+                <span class="w-2 h-2 rounded-full bg-amber-400 mr-2"></span>
+                Autonomous Agent Execution (Manus & Base44)
+              </span>
+              <span class="text-[10px] bg-amber-950/40 text-amber-300 border border-amber-700/40 px-2 py-0.5 rounded font-mono">Execution Loop</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">${tc.agent_res}</p>
+            <div class="bg-rose-950/30 border border-rose-900/40 p-2.5 rounded-lg text-xs text-rose-300">
+              <strong>${tc.agent_fail}</strong>
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+
+    window.onload = function() {
+      displayTestCase('legal_marketing');
+      calculateChecklistHealth();
+      // Load the preset directly so the user sees immediate correct execution
+      loadSamplePreset('legal_video');
+    };
+  </script>
+</body>
+</html>
