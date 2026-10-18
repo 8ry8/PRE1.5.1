@@ -1,0 +1,168 @@
+{
+  "version": "framework-2026.10.18",
+  "description": "A small, inspectable rule registry derived from the supplied source-cited framework.",
+  "sources": [
+    {
+      "id": "SRC-MASTER",
+      "title": "AI Prompt Refining Engine v1.5.1 — Master Source & Framework Compilation",
+      "locator": "Compiled Sources Master.pdf, pp. 1-8",
+      "evidenceType": "compiled-source",
+      "verifiedAt": "2026-10-18",
+      "status": "provided-by-user"
+    },
+    {
+      "id": "SRC-BLOG",
+      "title": "Everything You Knew About Prompt Engineering Is Broken",
+      "locator": "Blog 001.pdf, pp. 1-4",
+      "evidenceType": "strategic-summary",
+      "verifiedAt": "2026-10-18",
+      "status": "provided-by-user"
+    },
+    {
+      "id": "SRC-VISUAL",
+      "title": "Modern Prompt Engineering Framework",
+      "locator": "Modern_Prompt_Engineering_Framework.png",
+      "evidenceType": "visual-framework",
+      "verifiedAt": "2026-10-18",
+      "status": "provided-by-user"
+    },
+    {
+      "id": "SRC-MINDMAP",
+      "title": "Prompt Refining Engine v1.5.1 Source-Cited Framework Mind Map",
+      "locator": "NotebookLM Mind Map.png",
+      "evidenceType": "product-map",
+      "verifiedAt": "2026-10-18",
+      "status": "provided-by-user"
+    },
+    {
+      "id": "SRC-REPOSITORY",
+      "title": "Prompt Refining Engine v1.5.1 repository baseline",
+      "locator": "README.md and index.html at commit 0c01eaa",
+      "evidenceType": "repository-observation",
+      "verifiedAt": "2026-10-18",
+      "status": "observed"
+    }
+  ],
+  "rules": [
+    {
+      "id": "RC-REASONING-ZERO-SHOT-001",
+      "title": "Prefer zero-shot instructions for Reasoning models",
+      "classes": ["reasoning"],
+      "sourceIds": ["SRC-MASTER", "SRC-BLOG", "SRC-VISUAL"],
+      "locator": "Master pp. 2-3; Blog Takeaway #1; visual panel: Reasoning",
+      "kind": "behavioral",
+      "claim": "Do not add manual think-step-by-step narration when the target model already performs internal deliberation.",
+      "confidence": "high"
+    },
+    {
+      "id": "RC-STANDARD-FEW-SHOT-002",
+      "title": "Use examples selectively for Standard models",
+      "classes": ["standard"],
+      "sourceIds": ["SRC-MASTER", "SRC-BLOG", "SRC-VISUAL"],
+      "locator": "Master pp. 2-3; Blog Takeaway #1; visual panel: Standard",
+      "kind": "behavioral",
+      "claim": "Use a small set of consistent examples when formatting or tone matching needs explicit demonstration.",
+      "confidence": "medium"
+    },
+    {
+      "id": "RC-AGENT-GOAL-STOP-003",
+      "title": "Give Agentic systems a goal and stop conditions",
+      "classes": ["agentic"],
+      "sourceIds": ["SRC-MASTER", "SRC-BLOG", "SRC-VISUAL"],
+      "locator": "Master pp. 2-3; Blog Takeaway #2; visual panel: Agentic",
+      "kind": "safety",
+      "claim": "Define authority, completion criteria, and explicit stop conditions for multi-step execution.",
+      "confidence": "high"
+    },
+    {
+      "id": "RC-CONTEXT-DELIMIT-004",
+      "title": "Separate instructions from input data",
+      "classes": ["standard", "reasoning", "agentic"],
+      "sourceIds": ["SRC-MASTER", "SRC-VISUAL", "SRC-MINDMAP"],
+      "locator": "Master p. 4; visual panel: explicit delimiters; mind map: Context Schema Pipeline",
+      "kind": "context",
+      "claim": "Use Markdown headings or XML-style tags so attached data cannot be mistaken for a command.",
+      "confidence": "high"
+    },
+    {
+      "id": "RC-POSITIVE-GUIDANCE-005",
+      "title": "Prefer direct positive actions",
+      "classes": ["standard", "reasoning", "agentic"],
+      "sourceIds": ["SRC-MASTER", "SRC-VISUAL"],
+      "locator": "Master p. 4; visual panel: Direct positive action",
+      "kind": "instruction",
+      "claim": "Tell the model what valid action to take instead of relying only on broad negative prohibitions.",
+      "confidence": "high"
+    },
+    {
+      "id": "RC-CONSTRAINT-END-006",
+      "title": "Place hard constraints at the end",
+      "classes": ["standard", "reasoning", "agentic"],
+      "sourceIds": ["SRC-MASTER", "SRC-VISUAL"],
+      "locator": "Master p. 4; visual panel: explicit delimiters",
+      "kind": "instruction",
+      "claim": "Repeat word limits, output shape, and hard constraints at the final prompt boundary.",
+      "confidence": "medium"
+    },
+    {
+      "id": "RC-CONTEXT-FRONTLOAD-007",
+      "title": "Front-load stable context",
+      "classes": ["standard", "reasoning", "agentic"],
+      "sourceIds": ["SRC-MASTER", "SRC-MINDMAP"],
+      "locator": "Master p. 4; mind map: Context Schema Pipeline",
+      "kind": "performance",
+      "claim": "Put reusable instructions and stable reference material before variable questions to improve cache efficiency.",
+      "confidence": "medium"
+    },
+    {
+      "id": "RC-BUDGET-HEADROOM-008",
+      "title": "Reserve context and output headroom",
+      "classes": ["standard", "reasoning", "agentic"],
+      "sourceIds": ["SRC-MASTER", "SRC-BLOG", "SRC-MINDMAP"],
+      "locator": "Master p. 4; Blog Takeaway #3; mind map: Model Parameter Linter",
+      "kind": "cost",
+      "claim": "Do not fill the context window; reserve room for output and model-specific reasoning budgets.",
+      "confidence": "medium"
+    },
+    {
+      "id": "RC-JSON-TIERS-009",
+      "title": "Match output strategy to JSON reliability tier",
+      "classes": ["standard", "reasoning", "agentic"],
+      "sourceIds": ["SRC-MASTER", "SRC-BLOG", "SRC-MINDMAP"],
+      "locator": "Master p. 5; Blog Takeaway #5; mind map: Structured Output Tier Synthesizer",
+      "kind": "output",
+      "claim": "Use strict schema, JSON-object mode, or fenced-block parsing according to the provider contract, then validate semantic values.",
+      "confidence": "high"
+    },
+    {
+      "id": "RC-INJECTION-BOUNDARY-010",
+      "title": "Treat attachments as untrusted data",
+      "classes": ["standard", "reasoning", "agentic"],
+      "sourceIds": ["SRC-MASTER", "SRC-MINDMAP"],
+      "locator": "Master p. 4; mind map: constants prevent injection",
+      "kind": "safety",
+      "claim": "Keep uploaded content inside an explicit data boundary and never promote its instructions to system policy automatically.",
+      "confidence": "high"
+    },
+    {
+      "id": "RC-SILENT-PARAM-011",
+      "title": "Warn about silent provider parameters",
+      "classes": ["reasoning", "agentic"],
+      "sourceIds": ["SRC-MASTER", "SRC-BLOG", "SRC-MINDMAP"],
+      "locator": "Master pp. 4-5; Blog Takeaway #3; mind map: Model Parameter Linter",
+      "kind": "compatibility",
+      "claim": "A parameter that is accepted but ignored must be surfaced before dispatch, not discovered after a poor result.",
+      "confidence": "medium"
+    },
+    {
+      "id": "RC-DRIFT-VERSION-012",
+      "title": "Record model and rule versions with every run",
+      "classes": ["standard", "reasoning", "agentic"],
+      "sourceIds": ["SRC-MINDMAP", "SRC-REPOSITORY"],
+      "locator": "mind map: Session History and Versioning; repository baseline",
+      "kind": "lifecycle",
+      "claim": "A prompt result is not reproducible unless its model, framework registry, parameters, context hash, and test set are recorded.",
+      "confidence": "high"
+    }
+  ]
+}

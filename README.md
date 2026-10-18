@@ -1,75 +1,78 @@
-# PRE1.5.1
-Prompt Refining Engine 1.5.1
+# Prompt Refining Engine v1.5.1
 
- v1.5.1 — Summary & Feature Retain Matrix
-In Prompt Refining Engine v1.5.1, we have retained and integrated the complete suite of architectural improvements, AI-powered features, and source-grounded frameworks developed across our product roadmap.
+Prompt Refining Engine is a source-cited prompt engineering workbench. This repository now contains a working local-first Single Page Application, a Kotlin/Jetpack Compose Android client draft, and a SwiftUI Apple client draft for iOS/macOS. All three clients share the same project concepts: behavioral classes, output tiers, source citations, change records, diagnostics, regression fixtures, and versioned prompt variants.
 
-1. Core Architectural & UX Improvements: Prompt Refining Engine Retained
-   
-1. Behavioral-Class Rules Citation Matrix & Visual Diff Inspector
-• What it does: Displays a line-by-line visual diff showing exact prompt transformations linked directly to cited behavioral framework rules (Standard, Reasoning, or Agentic model classes).
-• Why it matters: Replaces opaque black-box prompt rewrites with transparent, verifiable rule attribution.
+> **Beginner note:** The apps intentionally start in deterministic local mode. They do not contain provider API keys and they do not pretend that a live AI call happened. A server-side provider relay is a separate security task.
 
-3. Model-Specific Parameter & API Constraint Linter
-• What it does: Performs static pre-flight audits to flag parameter incompatibilities, sampling parameter silences (e.g., DeepSeek thinking mode ignoring temperature/top_p), and pricing cliffs (e.g., Grok 4.6 rate jumps at 200k tokens).
-• Why it matters: Prevents silent API execution failures and unexpected billing spikes prior to deployment.
+## What is implemented
 
-4. Structured Context & Input Schema Parsing Pipeline
-• What it does: Extracts attached files (PDF, CSV, JSON, Word) and automatically front-loads stable instructions and reference data.
-• Why it matters: Maximize API prompt cache hit rates above 90% while preventing context window exhaustion.
+- **Workbench:** Enter a raw goal, select Standard, Reasoning, or Agentic behavior, attach PDF, Word, CSV, JSON, Markdown, or text locally, and create a refined prompt. Text-layer PDFs and DOCX paragraphs are extracted locally; scanned PDFs are rejected.
+- **Source-cited visual review:** Every local transformation receives a stable rule ID, an explanation, and a source locator from `shared/framework-rules.json`.
+- **Pre-flight linter:** Shows context estimates, output reserves, illustrative cost, JSON-tier warnings, and Agentic safety boundaries.
+- **Local-first version history:** The SPA uses IndexedDB with a localStorage fallback; Android uses SharedPreferences; Apple uses UserDefaults. All are shaped around `shared/prompt-project.schema.json`.
+- **Regression evaluator:** Runs five deterministic fixtures derived from the supplied source compilation. This is a local rule-coverage simulation, not an LLM judge.
+- **Agentic safety checks:** The SPA includes bounded prompt-injection, runaway-loop, and final-constraint checks without executing real tools.
+- **Evidence library:** Displays the source records and framework rules used by the local engine.
+- **Typed handoff exports:** The SPA can export JSON, Python, TypeScript, Go, Java, and cURL templates. Generated code leaves provider credentials as placeholders.
 
-5. Export-Ready Multi-Language SDK Code Generator
-• What it does: Converts refined prompts and schema contracts into production-ready SDK code snippets across Python, TypeScript, Go, Java, and cURL.
-• Why it matters: Enforces vendor-compliant parameters (reasoning.effort, thinking_level, json_schema) for seamless engineering handoff.
+## Repository map
 
-6. Local Session History & Branching Version Tree
-• What it does: Provides client-side IndexedDB persistence to log prompt iterations, parameters, and test runs without mandatory user login.
-• Why it matters: Enables instantaneous, zero-friction prompt comparison and parent/child variant tracking.
+```text
+.
+├── index.html                         # Vite entry point for the SPA
+├── src/                               # TypeScript SPA and local deterministic engine
+│   ├── main.ts                        # Accessible multi-view UI and event wiring
+│   ├── engine.ts                      # Refinement, linting, evaluation, stress checks
+│   ├── domain.ts                      # Cross-platform TypeScript contract
+│   ├── store.ts                       # IndexedDB/localStorage persistence
+│   ├── exporters.ts                   # Safe provider-neutral handoff templates
+│   └── styles.css                     # Responsive visual system
+├── shared/
+│   ├── framework-rules.json           # Source records and stable rule IDs
+│   ├── test-cases.json                # Five regression fixtures
+│   └── prompt-project.schema.json     # Portable project schema
+├── android/                           # Kotlin + Jetpack Compose client draft
+├── apple/                             # SwiftUI iOS/macOS client draft
+├── docs/                              # Strategic approval memo
+└── tests/                             # Node contract tests
+```
 
-2. Retained AI-Powered Features
-   
-1. Automated Model-Class Regression Evaluator (Eval Harness)
-• What it does: Uses reasoning models as LLM-as-a-judge evaluators to run refined prompts simultaneously across Standard, Reasoning, and Agentic models using synthetic test cases.
-• Why it matters: Quantifies accuracy gains and detects latency/CoT penalties before going to production.
+## Run the SPA locally
 
-3. Dynamic Meta-Prompting & Context Engineering Synthesizer
-• What it does: Synthesizes raw user goals into structured system prompts configured for model-specific XML tags, section ordering, and reasoning guidelines.
-• Why it matters: Automatically eliminates redundant chain-of-thought instructions on reasoning models while enforcing clear section delimiters.
+You need Node.js 20 or newer.
 
-4. Structured Output Schema & Tier-Conformity Synthesizer
-• What it does: Evaluates target model JSON reliability tiers (Tier 1 Strict API schema, Tier 2 JSON-object with literal cue words, Tier 3 fenced code blocks) and embeds required schema wrappers.
-• Why it matters: Prevents empty API responses and guarantees syntactically valid structured outputs.
+```bash
+npm install
+npm test
+npm run dev
+```
 
-5. Agentic Prompt Drift & Vulnerability Stress-Tester
-• What it does: Adversarially red-teams prompts against persona-instruction conflicts, safety classifier triggers, and runaway multi-turn execution loops.
-• Why it matters: Identifies failure modes pre-launch to maintain system reliability.
+Open the URL printed by Vite. The dev server binds to `0.0.0.0` so a hosted preview can load it. To create a production bundle:
 
-3. Retained Application & Codebase Capabilities
-   
-• Multi-Tab Interface Layout: Retained all 4 operational tabs: Workbench & Refiner, GPT-4o vs o3 Model Matrix, Refinement Checklist, and Side-by-Side Test Suite.
-• Quick Domain Presets: Embedded ready-to-run presets including Legal Noir Video, o3 Logic, and JSON Schema.
-• Dual Deployment Architecture:
-  - Single-Page Application (index.html): Zero-dependency static build ready for 1-click GitHub Pages hosting.
-  - Next.js 15 App Router Layout: Typed enterprise codebase with serverless API route handlers and modular React components.
-  - 
-Part 2: README & Beginner Deployment Guide
+```bash
+npm run build
+npm run preview
+```
 
-Prompt Refining Engine v1.0.0 — Beginner Guide
-Welcome to the Prompt Refining Engine v1.0.0 project! This guide explains the project architecture, file structure with inline annotations, and step-by-step instructions to deploy your live app on GitHub Pages.
+The build runs TypeScript checking first. `dist/` is generated output and is ignored by Git.
 
-File Structure with Inline Annotations
-• index.html: Main Single-Page Application (UI, Tailwind styles, and JS refiner logic)
-• README.md: Project documentation, setup guide, and model matrix
-• docs/deployment_guide.md: Detailed deployment tutorial for hosting on GitHub Pages
-• docs/framework_matrix.md: Model comparison matrix (GPT-4o vs o3 vs Gemini 2.5 vs DeepSeek R1)
-• enterprise-nextjs/package.json: Node.js dependencies and project metadata
-• enterprise-nextjs/app/page.tsx: Homepage React component for Next.js App Router
-• enterprise-nextjs/app/api/refine/route.ts: Serverless API endpoint for prompt refinement
-• enterprise-nextjs/lib/models.ts: Registry of frontier AI models and behavioral parameters
+## Run the Android client
 
-Deployment Steps for Beginners
-1. Create a public GitHub repository named prompt-refining-engine.
-2. Create a new file named index.html and paste the complete application code into it.
-3. Commit the changes to the main branch.
-4. Go to Repository Settings -> Pages, set Source to 'Deploy from a branch' (main branch, root folder), and click Save.
-5. Your live app will be published on GitHub Pages in 1-2 minutes!
+Install Android Studio Ladybug or newer with Android SDK 35, then open the `android/` folder. Gradle will download the Android and Compose dependencies; choose an emulator and press **Run**. See `android/README.md` for the production boundary and beginner steps.
+
+## Run the Apple client
+
+Install Xcode 15.4 or newer on macOS and open `apple/Package.swift`. The source is a SwiftUI shared client for iOS 17 and macOS 14. The provided sandbox does not contain Xcode, so an `.xcodeproj` cannot be compiled here; see `apple/README.md` for adding the shared files to an iOS App target.
+
+## Important safety and architecture notes
+
+1. **No browser API keys:** Never add an API key to `src/`, `index.html`, Android resources, or Swift source. Use an authenticated server relay with rate limits and tenant policy.
+2. **Local mode is labeled:** A local refinement is a deterministic transformation based on the approved registry. It is not proof that a target model agrees with the rule.
+3. **Evidence has dates and confidence:** Provider behavior and pricing change. Update the registry only after verification and preserve the registry version on each variant.
+4. **Attachments are untrusted:** The SPA extracts text from PDF and DOCX locally and rejects scanned PDFs without a text layer. OCR, cloud indexing, and production prompt-injection scanning require separate reviewed adapters.
+5. **Agentic tools are not enabled:** The current clients draft authority and stop conditions and run bounded simulations. They do not execute shell commands, browse, spend money, or mutate external repositories.
+6. **Generated SDK snippets are templates:** They intentionally contain provider placeholders and should be reviewed by an engineer before deployment.
+
+## Approval boundary for the next coding phase
+
+The strategic memo in `docs/strategic-summary-memo-v1.5.1.md` identified eleven approved roadmap items and nine release waves because five improvements plus six AI features equals eleven items. The current code implements the deterministic trust layer and local simulation surfaces first. Live AI synthesizing, cross-provider evaluation, telemetry-based drift diagnosis, enterprise accounts, and real Agentic tools should be added only after the founding team approves provider contracts, privacy rules, cost controls, and the server-side execution boundary.

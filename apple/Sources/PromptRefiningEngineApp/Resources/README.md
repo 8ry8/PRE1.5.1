@@ -1,0 +1,1 @@
+Framework registry files may be bundled here when the Apple target is created in Xcode. The first SwiftUI build keeps the compact fallback rule registry in `Engine.swift` so the sample app remains self-contained.

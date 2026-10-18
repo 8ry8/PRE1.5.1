@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prompt-refining-engine.local/schemas/prompt-project.schema.json",
+  "title": "Prompt Refining Engine Project",
+  "type": "object",
+  "required": ["id", "name", "createdAt", "updatedAt", "variants", "frameworkVersion"],
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "frameworkVersion": { "type": "string" },
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "rawGoal", "refinedPrompt", "modelClass", "createdAt", "citations", "diagnostics"],
+        "properties": {
+          "id": { "type": "string" },
+          "parentId": { "type": ["string", "null"] },
+          "rawGoal": { "type": "string" },
+          "refinedPrompt": { "type": "string" },
+          "modelClass": { "enum": ["standard", "reasoning", "agentic"] },
+          "targetModel": { "type": "string" },
+          "outputTier": { "enum": ["tier1", "tier2", "tier3"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "contextBlocks": { "type": "array" },
+          "citations": { "type": "array" },
+          "diagnostics": { "type": "array" },
+          "evaluation": { "type": ["object", "null"] }
+        }
+      }
+    }
+  }
+}

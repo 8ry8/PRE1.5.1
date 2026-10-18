@@ -1,0 +1,22 @@
+{
+  "name": "prompt-refining-engine-v1-5-1",
+  "version": "1.5.1",
+  "private": true,
+  "description": "Source-cited prompt engineering workbench with local-first history and cross-platform domain contracts.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/contract.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "pdfjs-dist": "^6.4.299"
+  }
+}
