@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pages: read
+      pages: write
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -29,6 +29,29 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      # If Pages still publishes from the main branch ("legacy"), GitHub
+      # serves the raw repository root — including the TypeScript entry
+      # point browsers cannot run — and its own legacy deploy races this
+      # workflow and overwrites the compiled site, producing a blank white
+      # page. Try to switch the site to the GitHub Actions source with the
+      # workflow token. If the token is refused, warn (never silently pass)
+      # with the one manual setting that fixes it, and keep building so
+      # pull-request checks still validate the bundle.
+      - name: Ensure Pages publishes via GitHub Actions
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build_type="$(gh api "repos/${{ github.repository }}/pages" --jq '.build_type' 2>/dev/null || echo unknown)"
+          echo "Current Pages build_type: ${build_type}"
+          if [ "$build_type" != "workflow" ]; then
+            if gh api -X PUT "repos/${{ github.repository }}/pages" -f build_type=workflow 2>/dev/null; then
+              echo "Switched Pages source to GitHub Actions."
+            else
+              echo "::warning title=GitHub Pages will show a blank white page::Pages source is '${build_type}', not GitHub Actions. The branch/legacy publisher serves the uncompiled repository root over this workflow's built site. Fix once in Settings → Pages → Build and deployment → Source → GitHub Actions, then re-run this workflow."
+            fi
+          fi
 
       - name: Configure GitHub Pages
         id: pages
@@ -44,6 +67,18 @@ jobs:
         run: npm run build
         env:
           VITE_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+
+      # Regression guard for the blank-white-page failure: never upload a
+      # "site" that is still the raw Vite source entry, and never upload a
+      # bundle whose JS/CSS assets are missing.
+      - name: Verify built site is deployable
+        run: |
+          test -f dist/index.html
+          ! grep -q '/src/main.ts' dist/index.html
+          grep -Eq '(src|href)="[^"]*assets/[^"]+\.js"' dist/index.html
+          grep -Eq '(src|href)="[^"]*assets/[^"]+\.css"' dist/index.html
+          test -n "$(find dist/assets -name '*.js' -print -quit)"
+          test -n "$(find dist/assets -name '*.css' -print -quit)"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4

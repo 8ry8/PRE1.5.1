@@ -6,10 +6,50 @@
     <meta name="theme-color" content="#07111f" />
     <meta name="description" content="Prompt Refining Engine v1.5.1 — source-cited prompt engineering workbench" />
     <title>Prompt Refining Engine v1.5.1</title>
+    <!-- Critical boot styles are inlined on purpose: if the compiled JS/CSS
+         bundle ever fails to load (for example the raw repository root is
+         published instead of Vite's dist/ output), the visitor must see this
+         dark loading/error screen with an explanation — never a blank
+         white page while #app sits empty. -->
+    <style>
+      html { background: #07111f; }
+      body { margin: 0; background: #07111f; color: #ecf4ff; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .boot-fallback { min-height: 100vh; display: grid; place-items: center; align-content: center; gap: 12px; padding: 32px 20px; text-align: center; }
+      .boot-fallback h1 { font-size: 20px; margin: 0; }
+      .boot-fallback p { max-width: 560px; margin: 0; color: #8ea0b7; font-size: 14px; line-height: 1.6; }
+      .boot-fallback code { color: #7ee1d0; }
+      .boot-fallback button { margin-top: 8px; padding: 10px 18px; border: 1px solid rgba(126, 225, 208, 0.5); border-radius: 10px; background: rgba(126, 225, 208, 0.12); color: #ecf4ff; font: inherit; cursor: pointer; }
+    </style>
   </head>
   <body>
     <noscript>Prompt Refining Engine requires JavaScript for the interactive workbench.</noscript>
-    <div id="app"></div>
+    <div id="app">
+      <div class="boot-fallback" role="status">
+        <h1>Prompt Refining Engine</h1>
+        <p>Loading the local-first workbench…</p>
+      </div>
+    </div>
+    <script>
+      // Boot watchdog: the module below replaces #app within a second or
+      // two. If it cannot load or parse at all (uncompiled TypeScript being
+      // served, a 404'd bundle, an offline cache miss), swap the loading
+      // note for a diagnosable message instead of a blank white screen.
+      window.setTimeout(function () {
+        var app = document.getElementById('app');
+        if (!app || !app.querySelector('.boot-fallback')) return;
+        app.innerHTML =
+          '<div class="boot-fallback" role="alert">' +
+          '<h1>The workbench did not load</h1>' +
+          '<p>The application bundle never started. This usually means the ' +
+          'uncompiled repository root is being served instead of the built ' +
+          'site: run <code>npm run build</code> and publish <code>dist/</code>, ' +
+          'or on GitHub Pages set <strong>Settings &rarr; Pages &rarr; Source</strong> ' +
+          'to <strong>GitHub Actions</strong>. Check the browser console for ' +
+          'the failed script request, then reload.</p>' +
+          '<button type="button" onclick="window.location.reload()">Reload</button>' +
+          '</div>';
+      }, 8000);
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
