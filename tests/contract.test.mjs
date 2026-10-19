@@ -36,3 +36,38 @@ test('capability registry accounts for every approved roadmap item', async () =>
   assert.equal(registry.capabilities.filter((item) => item.kind === 'feature').length, 6);
   assert.ok(registry.capabilities.every((item) => item.entryPoint));
 });
+
+const readText = async (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('root page shows a boot fallback instead of a blank white page', async () => {
+  const html = await readText('index.html');
+  // Dark inline boot styling + placeholder paint before any bundle loads,
+  // and a watchdog replaces a stuck placeholder with a diagnosable error.
+  assert.match(html, /background:\s*#07111f/);
+  assert.match(html, /boot-fallback/);
+  assert.match(html, /did not load/);
+  assert.match(html, /setTimeout/);
+});
+
+test('boot renders the shell before touching storage and validates saved projects', async () => {
+  const main = await readText('src/main.ts');
+  const bootBody = main.slice(main.indexOf('async function boot'));
+  assert.ok(bootBody.indexOf('renderShell();') !== -1, 'boot must render the shell');
+  assert.ok(
+    bootBody.indexOf('renderShell();') < bootBody.indexOf('store.load()'),
+    'renderShell must happen before store.load() so storage can never blank the page',
+  );
+  const store = await readText('src/store.ts');
+  assert.match(store, /normalizeProject/);
+  assert.match(store, /onblocked/);
+  assert.match(store, /DB_OPEN_TIMEOUT_MS/);
+});
+
+test('production build defaults to a subpath-safe base and Pages deploy is guarded', async () => {
+  const viteConfig = await readText('vite.config.ts');
+  assert.match(viteConfig, /'\.\/'/);
+  const workflow = await readText('.github/workflows/pages.yml');
+  assert.match(workflow, /Verify built site is deployable/);
+  assert.match(workflow, /build_type=workflow/);
+  assert.match(workflow, /\/src\/main\.ts/);
+});

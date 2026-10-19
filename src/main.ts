@@ -1,6 +1,7 @@
 import {
   FRAMEWORK_RULES,
   FRAMEWORK_SOURCES,
+  FRAMEWORK_VERSION,
   MODEL_CLASS_LABELS,
   MODEL_PROFILES,
   type ContextBlock,
@@ -542,8 +543,19 @@ async function handleChange(event: Event): Promise<void> {
 }
 
 async function boot(): Promise<void> {
-  state.project = await store.load();
-  state.project.frameworkVersion = state.project.frameworkVersion || 'framework-2026.10.18';
+  // Render the shell FIRST, before any storage I/O. Boot used to await
+  // IndexedDB/localStorage before touching #app, so a blocked, throwing,
+  // or malformed store left visitors on an empty white page forever.
+  // Now the UI always paints; the saved project is applied afterwards.
+  renderShell();
+  try {
+    state.project = await store.load();
+  } catch {
+    state.notice = 'Saved workspace could not be read, so a fresh in-memory workspace was started. Browser storage may be blocked or corrupted.';
+    render();
+    return;
+  }
+  state.project.frameworkVersion = state.project.frameworkVersion || FRAMEWORK_VERSION;
   const latest = [...state.project.variants].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
   if (latest) {
     state.activeVariant = latest;
@@ -553,7 +565,9 @@ async function boot(): Promise<void> {
     state.tierSelection = latest.outputTier;
     state.contextBlocks = [...latest.contextBlocks];
   }
-  renderShell();
+  // render() only refreshes the already-mounted shell; renderShell() would
+  // register the root event listeners a second time.
+  render();
 }
 
 void boot();
