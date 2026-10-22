@@ -4,11 +4,16 @@
   "main": "worker.mjs",
   "compatibility_date": "2026-10-21",
   "workers_dev": true,
+  // Serve only the single workers.dev URL; per-version preview URLs would add
+  // extra public endpoints for this credential-handling Worker.
+  "preview_urls": false,
   "vars": {
     // An origin has no /PRE1.5.1/ path or trailing slash.
     "ALLOWED_ORIGIN": "https://8ry8.github.io",
-    // Example model ID. Change this to a generateContent model available to your key.
-    "GEMINI_MODEL": "gemini-2.5-flash"
+    // Stable generateContent model that Google offers to new API keys (Oct 2026).
+    // gemini-2.5-* models now return "not found" for keys that never used them.
+    // Change this if Google retires the model or your key lacks access to it.
+    "GEMINI_MODEL": "gemini-3.8-flash"
   },
   "ratelimits": [
     {

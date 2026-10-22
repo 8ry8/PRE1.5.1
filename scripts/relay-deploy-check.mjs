@@ -25,6 +25,18 @@ export function workerBaseUrl(value) {
   return url.origin;
 }
 
+// The relay's error strings are fixed, credential-free setup hints (the same text
+// the website shows after Test & connect), e.g. "Gemini model not found. ...".
+// Surface one only if it still looks like such a sentence: short, plain
+// punctuation, and no URLs, markup, key-like prefixes, or long opaque tokens.
+export function relayErrorHint(data, accessToken) {
+  const message = typeof data?.error === 'string' ? data.error.trim() : '';
+  if (!message || message.length > 240) return '';
+  if (!/^[A-Za-z0-9 .,;:'’()/_-]+$/.test(message) || /\S{25,}|\/\/|https?:|www\./i.test(message)) return '';
+  if (/AIza/.test(message) || (accessToken && message.includes(accessToken))) return '';
+  return message;
+}
+
 export async function verifyRelayConnection(url, accessToken, allowedOrigin, fetcher = fetch) {
   const base = workerBaseUrl(url);
   if (!/^[\x21-\x7e]{32,256}$/.test(accessToken ?? '')) throw new Error('RELAY_ACCESS_TOKEN is missing or invalid.');
@@ -46,7 +58,8 @@ export async function verifyRelayConnection(url, accessToken, allowedOrigin, fet
     throw new Error('Worker deployment completed, but its connection check could not finish. Check its URL and test again in the website’s API connection screen.');
   }
   if (!response.ok || data?.connected !== true || data?.provider !== 'Google Gemini' || typeof data?.model !== 'string' || !/^gemini-[a-zA-Z0-9._-]{1,100}$/.test(data.model)) {
-    throw new Error(`Worker deployment completed, but Gemini access could not be verified (HTTP ${response.status}). Check the Worker secrets, ALLOWED_ORIGIN, GEMINI_MODEL, and Google quota/billing. The website's Test & connect button can show the setup error. No text generation was attempted.`);
+    const hint = response.ok ? '' : relayErrorHint(data, accessToken);
+    throw new Error(`Worker deployment completed, but Gemini access could not be verified (HTTP ${response.status}).${hint ? ` Relay reported: ${hint}` : ''} Check the Worker secrets, ALLOWED_ORIGIN, GEMINI_MODEL, and Google quota/billing. The website's Test & connect button can show the setup error. No text generation was attempted.`);
   }
   return { url: base, model: data.model };
 }
@@ -65,7 +78,15 @@ async function main() {
   const ts = await import('typescript');
   const { config, error } = ts.parseConfigFileTextToJson('relay/wrangler.jsonc', readFileSync('relay/wrangler.jsonc', 'utf8'));
   if (error) throw new Error('Cannot read relay/wrangler.jsonc.');
-  const result = await verifyRelayConnection(url, process.env.RELAY_ACCESS_TOKEN, config?.vars?.ALLOWED_ORIGIN);
+  let result;
+  try {
+    result = await verifyRelayConnection(url, process.env.RELAY_ACCESS_TOKEN, config?.vars?.ALLOWED_ORIGIN);
+  } catch (error) {
+    // Show the (credential-free) reason on the run page, not only in raw logs.
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+      `**Connection check failed:** ${error.message}\n`);
+    throw error;
+  }
   console.log(`Gemini model access verified: ${result.model}. No text generation was performed.`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,
     `Key/model access verified for **${result.model}** without generating text. Generation still depends on provider quota and billing.\n`);

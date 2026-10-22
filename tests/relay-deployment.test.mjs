@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { validateDeploymentSecrets, verifyRelayConnection, workerBaseUrl } from '../scripts/relay-deploy-check.mjs';
+import ts from 'typescript';
+import { relayErrorHint, validateDeploymentSecrets, verifyRelayConnection, workerBaseUrl } from '../scripts/relay-deploy-check.mjs';
 
 const token = 'test-only-relay-password-with-32-characters';
 const url = 'https://pre-gemini-relay.test-account.workers.dev';
@@ -57,6 +58,59 @@ test('failed verification does not disclose raw network or provider errors', asy
       return true;
     });
   }
+});
+
+test('failed verification names the relay\'s own setup error so CI logs are actionable', async () => {
+  const notFound = 'Gemini model not found. Set GEMINI_MODEL on the Worker to a model available to your key.';
+  await assert.rejects(verifyRelayConnection(url, token, origin, async () => Response.json({ error: notFound }, { status: 502 })), (error) => {
+    assert.match(error.message, /deployment completed/);
+    assert.match(error.message, /HTTP 502/);
+    assert.equal(error.message.includes(`Relay reported: ${notFound}`), true);
+    return true;
+  });
+  // A successful status code with a malformed body is never decorated with a hint.
+  await assert.rejects(verifyRelayConnection(url, token, origin, async () => Response.json({ error: notFound, connected: false })), (error) => {
+    assert.equal(error.message.includes('Relay reported'), false);
+    return true;
+  });
+});
+
+test('every fixed relay error message can be surfaced, but secret-like text never is', async () => {
+  const source = await readFile(new URL('../relay/worker.mjs', import.meta.url), 'utf8');
+  const messages = [...source.matchAll(/'([A-Z][^'\n]{18,}\.)'/g)].map((match) => match[1]);
+  assert.ok(messages.length >= 20, `expected the Worker's user-facing messages, found ${messages.length}`);
+  for (const message of messages) assert.equal(relayErrorHint({ error: message }, token), message, message);
+
+  for (const unsafe of [
+    token,
+    `Access denied for ${token}.`,
+    'Key AIza' + 'x'.repeat(35) + ' was rejected.',
+    'Gemini rejected the key AIzaShort.',
+    'See https://evil.test for help.',
+    'See //evil.test for help.',
+    'Visit www.evil.test now.',
+    '[Fix it](https://evil.test)',
+    '<b>Gemini rejected the request.</b>',
+    'Token: abcdefghijklmnopqrstuvwxyz0123456789',
+    'Line one.\nLine two.',
+    'x '.repeat(130),
+  ]) {
+    assert.equal(relayErrorHint({ error: unsafe }, token), '', unsafe);
+  }
+  for (const notAMessage of [undefined, null, {}, { error: 502 }, { error: '' }, { error: ['Gemini model not found.'] }]) {
+    assert.equal(relayErrorHint(notAMessage, token), '');
+  }
+});
+
+test('relay configuration uses a valid model ID and disables extra preview URLs', async () => {
+  const text = await readFile(new URL('../relay/wrangler.jsonc', import.meta.url), 'utf8');
+  const { config, error } = ts.parseConfigFileTextToJson('wrangler.jsonc', text);
+  assert.equal(error, undefined);
+  // Same rule the Worker enforces before it will contact Google.
+  assert.match(config.vars.GEMINI_MODEL, /^gemini-[a-zA-Z0-9._-]{1,100}$/);
+  assert.equal(config.vars.ALLOWED_ORIGIN, 'https://8ry8.github.io');
+  assert.equal(config.workers_dev, true);
+  assert.equal(config.preview_urls, false);
 });
 
 test('relay deploy is manual/main-only and secrets are isolated from Pages builds', async () => {
