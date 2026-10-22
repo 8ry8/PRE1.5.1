@@ -117,7 +117,21 @@ test('status checks the actual key/model without generating a prompt', async () 
   assert.equal(calls[0][0], 'https://generativelanguage.googleapis.com/v1beta/models/gemini-test');
   assert.equal(calls[0][1].method, 'GET');
   assert.equal(calls[0][1].body, undefined);
+  assert.equal(calls[0][1].redirect, 'manual');
   assert.equal(calls[0][1].headers['x-goog-api-key'], KEY);
+});
+
+test('provider redirects are not followed, so the API key stays on the fixed Google host', async () => {
+  let calls = 0;
+  const result = await handleRequest(request('/api/status'), env(), async (url, options) => {
+    calls++;
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-test');
+    assert.equal(options.redirect, 'manual');
+    return new Response(null, { status: 302, headers: { Location: 'https://evil.example/collect' } });
+  });
+  assert.equal(result.status, 502);
+  assert.match((await result.json()).error, /Gemini is unavailable/);
+  assert.equal(calls, 1);
 });
 
 test('Worker entry point does not mistake Cloudflare execution context for fetch', async (t) => {
@@ -138,7 +152,7 @@ test('valid refinement uses fixed Google host, server model, headers, and bounde
   const [url, options] = calls[0];
   assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent');
   assert.equal(url.includes(KEY), false);
-  assert.equal(options.redirect, 'error');
+  assert.equal(options.redirect, 'manual');
   assert.equal(options.headers['x-goog-api-key'], KEY);
   const body = JSON.parse(options.body);
   assert.deepEqual(body.generationConfig, { candidateCount: 1, maxOutputTokens: 8192 });
