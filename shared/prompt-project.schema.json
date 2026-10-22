@@ -27,7 +27,20 @@
           "contextBlocks": { "type": "array" },
           "citations": { "type": "array" },
           "diagnostics": { "type": "array" },
-          "evaluation": { "type": ["object", "null"] }
+          "evaluation": { "type": ["object", "null"] },
+          "generation": {
+            "type": "object",
+            "required": ["mode", "provider", "model"],
+            "additionalProperties": false,
+            "properties": {
+              "mode": { "const": "live-provider" },
+              "provider": { "type": "string" },
+              "model": { "type": "string" },
+              "inputTokens": { "type": "integer", "minimum": 0 },
+              "outputTokens": { "type": "integer", "minimum": 0 },
+              "requestId": { "type": "string" }
+            }
+          }
         }
       }
     }

@@ -42,7 +42,10 @@ function isVariant(value: unknown): value is PromptVariant {
     Array.isArray(value.contextBlocks) &&
     Array.isArray(value.citations) &&
     Array.isArray(value.changes) &&
-    Array.isArray(value.diagnostics)
+    Array.isArray(value.diagnostics) &&
+    (value.generation === undefined || (isRecord(value.generation) &&
+      value.generation.mode === 'live-provider' &&
+      typeof value.generation.provider === 'string' && typeof value.generation.model === 'string'))
   );
 }
 

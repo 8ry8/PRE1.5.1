@@ -6,7 +6,7 @@
     {"id": "context-ingestion", "kind": "improvement", "status": "local", "entryPoint": "src/engine.ts#contextBlockFromFile"},
     {"id": "branching-history", "kind": "improvement", "status": "local", "entryPoint": "src/store.ts#WorkspaceStore"},
     {"id": "shared-contract-and-export", "kind": "improvement", "status": "local", "entryPoint": "shared/prompt-project.schema.json"},
-    {"id": "meta-prompt-synthesizer", "kind": "feature", "status": "deterministic-fallback", "entryPoint": "src/engine.ts#refinePrompt"},
+    {"id": "meta-prompt-synthesizer", "kind": "feature", "status": "optional-live-relay", "entryPoint": "src/ai/gemini.ts#GeminiRelay", "fallback": "src/engine.ts#refinePrompt"},
     {"id": "model-router-budget-planner", "kind": "feature", "status": "deterministic-fallback", "entryPoint": "src/engine.ts#buildRequestPlan"},
     {"id": "structured-output-contract", "kind": "feature", "status": "deterministic-fallback", "entryPoint": "src/engine.ts#inferOutputTier"},
     {"id": "cross-class-regression", "kind": "feature", "status": "local-simulation", "entryPoint": "src/engine.ts#evaluateLocally"},

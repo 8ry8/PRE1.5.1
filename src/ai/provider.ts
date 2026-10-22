@@ -5,7 +5,8 @@ import type { ModelClass, OutputTier, PromptVariant } from '../domain';
  *
  * The browser, Android app, and Apple app must depend on an authenticated
  * server relay rather than embedding provider credentials. The deterministic
- * local engine remains the fallback when no adapter is configured.
+ * local engine remains available when no adapter is configured. The Gemini
+ * relay is opt-in; failed live requests never silently become local results.
  */
 export interface ProviderRequest {
   prompt: string;

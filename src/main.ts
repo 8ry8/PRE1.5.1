@@ -34,9 +34,11 @@ import {
   exportTypeScript,
 } from './exporters';
 import { WorkspaceStore } from './store';
+import { GeminiRelay, type RelayConnectionStatus } from './ai/gemini';
+import geminiSetupGuide from '../docs/gemini-setup.md?raw';
 import './styles.css';
 
-type ViewName = 'workbench' | 'review' | 'linter' | 'history' | 'evaluation' | 'evidence';
+type ViewName = 'workbench' | 'review' | 'linter' | 'history' | 'evaluation' | 'evidence' | 'connection';
 type ClassSelection = ModelClass | 'auto';
 type TierSelection = OutputTier | 'auto';
 
@@ -53,6 +55,21 @@ interface AppState {
   evaluation: PromptVariant['evaluation'];
   stressFindings: ReturnType<typeof stressTest>;
   driftFindings: string[];
+  relayUrl: string;
+  connection: RelayConnectionStatus | null;
+  connecting: boolean;
+  refining: boolean;
+  extractingContext: boolean;
+  shareWithGemini: boolean;
+}
+
+const RELAY_URL_KEY = 'pre-gemini-relay-url';
+// This adapter holds only the separate relay password, in memory for this page.
+// It is never added to AppState, workspace storage, or exports.
+let connectedRelay: GeminiRelay | null = null;
+
+function savedRelayUrl(): string {
+  try { return localStorage.getItem(RELAY_URL_KEY) ?? ''; } catch { return ''; }
 }
 
 const store = new WorkspaceStore();
@@ -77,11 +94,21 @@ let state: AppState = {
   targetModel: 'standard-fast',
   tierSelection: 'auto',
   contextBlocks: [],
-  notice: 'Local-first workspace ready. No provider credentials are connected.',
+  notice: 'Local mode is ready—no key needed. To enable live Gemini refinement, open API connection.',
   evaluation: null,
   stressFindings: [],
   driftFindings: [],
+  relayUrl: savedRelayUrl(),
+  connection: null,
+  connecting: false,
+  refining: false,
+  extractingContext: false,
+  shareWithGemini: false,
 };
+
+function busy(): boolean {
+  return state.refining || state.connecting || state.extractingContext;
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -133,7 +160,7 @@ function renderShell(): void {
         </div>
         <div class="topbar-status">
           <span class="status-dot"></span>
-          <span>Local-first mode</span>
+          <button id="connection-status" class="status-link" data-view="connection">Local mode · Connect Gemini</button>
           <span class="status-divider"></span>
           <span id="framework-version">Framework loading</span>
         </div>
@@ -152,10 +179,11 @@ function renderShell(): void {
             ${navButton('history', '04', 'History', 'Branch and restore')}
             ${navButton('evaluation', '05', 'Eval & safety', 'Regression and drift')}
             ${navButton('evidence', '06', 'Evidence library', 'Rules and sources')}
+            ${navButton('connection', '07', 'API connection', 'Set up Gemini')}
           </nav>
           <div class="sidebar-note">
             <strong>Trust boundary</strong>
-            <p>AI calls are not connected in this build. Local refinements are deterministic and labeled as simulations.</p>
+            <p>Local mode needs no key. Optional Gemini refinement uses a private relay; the provider key stays on the server. Evaluation and tools remain local simulations.</p><button class="button button-quiet" data-view="connection">Connect Gemini →</button>
           </div>
         </aside>
         <main class="main-content">
@@ -184,6 +212,8 @@ function render(): void {
   if (projectName) projectName.textContent = state.project.name;
   if (projectMeta) projectMeta.textContent = `${state.project.variants.length} saved variant${state.project.variants.length === 1 ? '' : 's'}`;
   if (notice) notice.textContent = state.notice;
+  const connectionStatus = document.querySelector('#connection-status');
+  if (connectionStatus) connectionStatus.textContent = state.connection ? 'Gemini connected · Local by default' : 'Local mode · Connect Gemini';
 
   document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((button) => {
     button.classList.toggle('active', button.dataset.view === state.activeView);
@@ -200,6 +230,7 @@ function viewMarkup(): string {
     case 'history': return historyView();
     case 'evaluation': return evaluationView();
     case 'evidence': return evidenceView();
+    case 'connection': return connectionView();
     case 'workbench':
     default: return workbenchView();
   }
@@ -215,16 +246,18 @@ function workbenchView(): string {
       <div>
         <p class="eyebrow">WORKBENCH / ${MODEL_CLASS_LABELS[modelClass].toUpperCase()} POLICY</p>
         <h2>Make every refinement reviewable.</h2>
-        <p class="page-description">Draft a goal, isolate context, select a behavioral class, and produce a prompt with a visible evidence trail. The local engine never claims a live provider call occurred.</p>
+        <p class="page-description">Draft a goal, isolate context, select a behavioral class, and produce a prompt with a visible evidence trail. Choose the local policy engine, or explicitly send a draft to Gemini through your private relay.</p>
       </div>
       <div class="heading-actions">
-        <button class="button button-quiet" data-action="new-project">New project</button>
-        <button class="button button-secondary" data-action="save-variant" ${variant ? '' : 'disabled'}>Save snapshot</button>
+        <button class="button button-quiet" data-action="new-project" ${busy() ? 'disabled' : ''}>New project</button>
+        <button class="button button-secondary" data-action="save-variant" ${variant && !busy() ? '' : 'disabled'}>Save snapshot</button>
       </div>
     </div>
     <div class="workbench-grid">
       <section class="panel input-panel">
-        <div class="panel-heading"><div><span class="panel-kicker">01 / INPUT</span><h3>Task objective</h3></div><span class="pill pill-neutral">No credentials</span></div>
+        <div class="panel-heading"><div><span class="panel-kicker">01 / INPUT</span><h3>Task objective</h3></div><button class="icon-button" data-view="connection">${state.connection ? 'Gemini connected' : 'Connect Gemini →'}</button></div>
+        <fieldset class="input-fields" ${busy() ? 'disabled' : ''}>
+        <legend class="sr-only">Prompt input and refinement</legend>
         <label class="field-label" for="raw-goal">Raw goal or draft prompt</label>
         <textarea id="raw-goal" class="text-input large-input" placeholder="Example: Extract risks from this contract into a strict JSON object with source citations.">${escapeHtml(state.rawGoal)}</textarea>
         <div class="field-row">
@@ -236,7 +269,7 @@ function workbenchView(): string {
               ${option('agentic', 'Agentic', state.classSelection)}
             </select>
           </label>
-          <label class="field-label" for="model-select">Target profile
+          <label class="field-label" for="model-select">Target prompt profile
             <select id="model-select" class="select-input">
               ${MODEL_PROFILES.map((profile) => option(profile.id, profile.label, state.targetModel)).join('')}
             </select>
@@ -254,17 +287,22 @@ function workbenchView(): string {
           <div>
             <span class="panel-kicker">CONTEXT PIPELINE</span>
             <strong>Attach PDF, Word, CSV, JSON, or Markdown</strong>
-            <small>Files are read locally, hashed, and marked as untrusted data. Scanned PDFs without a text layer are rejected rather than silently misread.</small>
+            <small>Files are extracted locally and marked untrusted. Text leaves this browser only if you choose Gemini refinement. Scanned PDFs without a text layer are rejected.</small>
           </div>
           <label class="button button-secondary file-button" for="context-file">Choose file<input id="context-file" type="file" accept=".txt,.csv,.json,.md,.pdf,.docx,text/plain,text/csv,application/json,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" /></label>
         </div>
         ${contextList()}
-        <button class="button button-primary refine-button" data-action="refine">${variant ? 'Create new refined branch' : 'Refine with local policy engine'} <span>↗</span></button>
-        <p class="microcopy">Local mode applies the approved rule registry. Connect an approved server-side provider adapter later; never put provider keys in this browser.</p>
+        <button class="button button-primary refine-button" data-action="refine" ${busy() ? 'disabled' : ''}>${state.refining ? 'Refinement in progress…' : state.extractingContext ? 'Reading attachment locally…' : 'Refine with local policy engine'} <span>↗</span></button>
+        <div class="gemini-action">
+          ${state.connection ? `<label class="consent-label"><input id="gemini-consent" type="checkbox" ${state.shareWithGemini ? 'checked' : ''} /><span>Send this draft and extracted attachment text to my relay and Google Gemini. Provider charges may apply.</span></label><button class="button button-secondary refine-button" data-action="refine-gemini" ${!state.shareWithGemini || !state.rawGoal.trim() || busy() ? 'disabled' : ''}>Refine with Gemini ↗</button>` : `<button class="button button-secondary refine-button" data-view="connection">Set up Gemini / API connection →</button>`}
+          <p class="microcopy">Local refinement never makes an AI call. Gemini edits the prompt; it does not execute its task or tools. The target profile above is not the Gemini model.</p>
+        </div>
+        </fieldset>
       </section>
       <section class="panel output-panel">
         <div class="panel-heading"><div><span class="panel-kicker">02 / OUTPUT</span><h3>Refined production prompt</h3></div><div class="output-actions"><button class="icon-button" data-action="copy" ${variant ? '' : 'disabled'}>Copy</button><button class="icon-button" data-action="export-json" ${variant ? '' : 'disabled'}>JSON</button><button class="icon-button" data-action="export-typescript" ${variant ? '' : 'disabled'}>TS</button><button class="icon-button" data-action="export-python" ${variant ? '' : 'disabled'}>Py</button><button class="icon-button" data-action="export-go" ${variant ? '' : 'disabled'}>Go</button><button class="icon-button" data-action="export-java" ${variant ? '' : 'disabled'}>Java</button><button class="icon-button" data-action="export-curl" ${variant ? '' : 'disabled'}>cURL</button></div></div>
-        ${variant ? `<div class="output-meta"><span class="pill pill-class">${MODEL_CLASS_LABELS[variant.modelClass]}</span><span class="pill pill-neutral">${variant.outputTier}</span><span class="muted">${formatDate(variant.createdAt)}</span></div><pre class="prompt-output" aria-label="Refined prompt">${escapeHtml(variant.refinedPrompt)}</pre>` : emptyState('No refinement yet', 'Enter a goal and run the local policy engine. Its output will become a versioned snapshot with citations and diagnostics.')}
+        ${variant ? `<div class="output-meta"><span class="pill pill-class">${MODEL_CLASS_LABELS[variant.modelClass]}</span><span class="pill pill-neutral">${variant.outputTier}</span><span class="pill pill-neutral">${variant.generation ? `Live Gemini · ${escapeHtml(variant.generation.model)}` : 'Local policy'}</span><span class="muted">${formatDate(variant.createdAt)}</span></div><pre class="prompt-output" aria-label="Refined prompt">${escapeHtml(variant.refinedPrompt)}</pre>` : emptyState('No refinement yet', 'Enter a goal and run the local policy engine. Its output will become a versioned snapshot with citations and diagnostics.')}
+        ${variant?.generation ? '<div class="annotation-box"><p>AI rewrite: review required. Citations describe the local draft, not independent verification of Gemini’s changes.</p></div>' : ''}
         ${variant ? `<div class="summary-grid"><div><span>Changes</span><strong>${variant.changes.length}</strong></div><div><span>Citations</span><strong>${variant.citations.length}</strong></div><div><span>Diagnostics</span><strong>${variant.diagnostics.length}</strong></div><div><span>Budget</span><strong>${plan ? `${plan.inputTokens} tok` : '—'}</strong></div></div>` : ''}
       </section>
     </div>
@@ -281,7 +319,7 @@ function reviewView(): string {
   const variant = state.activeVariant;
   if (!variant) return pageEmpty('Review & citations', 'Refine a prompt first so the workbench can show a line-level change ledger.');
   return `
-    ${subpageHeading('REVIEW / TRACEABILITY', 'Every change needs a reason.', 'This ledger is intentionally explicit. An “unattributed” change would be a review failure, not a success state.')}
+    ${subpageHeading('REVIEW / TRACEABILITY', 'Every change needs a reason.', variant.generation ? 'Gemini’s rewrite is recorded as an unattributed change requiring human review. Rule citations describe the local draft only, not verification of the AI output.' : 'This ledger is intentionally explicit. An “unattributed” change would be a review failure, not a success state.')}
     <div class="review-layout">
       <section class="panel"><div class="panel-heading"><div><span class="panel-kicker">CHANGE LEDGER</span><h3>${variant.changes.length} recorded transformations</h3></div><span class="pill pill-class">${MODEL_CLASS_LABELS[variant.modelClass]}</span></div><div class="change-list">${variant.changes.map(changeMarkup).join('')}</div></section>
       <aside class="panel citation-panel"><div class="panel-heading"><div><span class="panel-kicker">CITATION MATRIX</span><h3>${variant.citations.length} rule references</h3></div></div>${variant.citations.map((citation) => citationMarkup(citation.ruleId, citation.locator, citation.confidence)).join('')}</aside>
@@ -327,7 +365,7 @@ function historyView(): string {
 
 function historyCard(variant: PromptVariant): string {
   const isActive = state.activeVariant?.id === variant.id;
-  return `<article class="history-card ${isActive ? 'selected' : ''}"><div class="history-card-top"><div><span class="panel-kicker">${variant.parentId ? 'BRANCH' : 'ROOT'} · ${variant.outputTier}</span><h3>${escapeHtml(variant.rawGoal.slice(0, 90) || 'Untitled goal')}</h3></div><span class="pill pill-class">${MODEL_CLASS_LABELS[variant.modelClass]}</span></div><p>${escapeHtml(variant.refinedPrompt.slice(0, 180))}…</p><div class="history-footer"><small>${formatDate(variant.createdAt)} · ${variant.citations.length} citations · ${variant.diagnostics.length} diagnostics</small><div><button class="icon-button" data-action="load-variant" data-id="${variant.id}">Open</button><button class="icon-button" data-action="branch-variant" data-id="${variant.id}">Branch</button></div></div></article>`;
+  return `<article class="history-card ${isActive ? 'selected' : ''}"><div class="history-card-top"><div><span class="panel-kicker">${variant.parentId ? 'BRANCH' : 'ROOT'} · ${variant.outputTier}</span><h3>${escapeHtml(variant.rawGoal.slice(0, 90) || 'Untitled goal')}</h3></div><span class="pill pill-class">${MODEL_CLASS_LABELS[variant.modelClass]}</span></div><p>${escapeHtml(variant.refinedPrompt.slice(0, 180))}…</p><div class="history-footer"><small>${formatDate(variant.createdAt)} · ${variant.generation ? `Live Gemini / ${escapeHtml(variant.generation.model)}` : 'Local policy'} · ${variant.citations.length} draft citations · ${variant.diagnostics.length} diagnostics</small><div><button class="icon-button" data-action="load-variant" data-id="${variant.id}">Open</button><button class="icon-button" data-action="branch-variant" data-id="${variant.id}">Branch</button></div></div></article>`;
 }
 
 function evaluationView(): string {
@@ -335,7 +373,7 @@ function evaluationView(): string {
   if (!variant) return pageEmpty('Evaluation & safety', 'Refine a prompt first so the local test suite has a version to run.');
   const evaluation = state.evaluation ?? variant.evaluation;
   return `
-    ${subpageHeading('EVALUATION / SAFETY', 'Measure before you trust.', 'The local harness checks rule coverage against five supplied regression cases. It is not an LLM-as-a-judge run until a reviewed provider adapter is connected.')}
+    ${subpageHeading('EVALUATION / SAFETY', 'Measure before you trust.', 'The local harness checks rule metadata against five supplied regression cases. These checks remain simulations even when Gemini refinement is connected; they do not validate the AI rewrite.')}
     <div class="action-strip"><button class="button button-primary" data-action="run-evaluation">Run local regression suite</button><button class="button button-secondary" data-action="run-stress">Run bounded stress test</button><button class="button button-secondary" data-action="run-drift" ${state.project.variants.length < 2 ? 'disabled' : ''}>Diagnose branch drift</button></div>
     ${evaluation ? evaluationMarkup(evaluation) : emptyState('No evaluation yet', 'Run the deterministic suite to compare this variant against the five framework fixtures.')}
     ${state.stressFindings.length ? `<section class="panel"><div class="panel-heading"><div><span class="panel-kicker">ADVERSARIAL CHECKS</span><h3>${state.stressFindings.length} bounded findings</h3></div><span class="pill pill-neutral">No live tools</span></div><div class="finding-list">${state.stressFindings.map(stressMarkup).join('')}</div></section>` : ''}
@@ -359,6 +397,38 @@ function evidenceView(): string {
   `;
 }
 
+function connectionView(): string {
+  return `
+    ${subpageHeading('SETTINGS / GEMINI', 'Connect your Gemini API safely.', 'GitHub Pages hosts only the frontend. Your Gemini API key belongs in a separate Cloudflare Worker secret—not in this site, a GitHub file, or a VITE_ variable.')}
+    <div class="connection-grid">
+      <section class="panel setup-panel">
+        <div class="panel-heading"><div><span class="panel-kicker">01 / ONE-TIME SERVER SETUP</span><h3>Where do I put my API key?</h3></div></div>
+        <ol class="setup-steps">
+          <li><strong>Deploy without a terminal.</strong><p>Add the four private repository secrets from the setup guide, then run <strong>GitHub Actions → Deploy private Gemini relay</strong> on <code>main</code>. The workflow deploys the Worker, configures its secrets, and checks Gemini access. The guide also includes a manual setup option.</p><p><a href="https://github.com/8ry8/PRE1.5.1/settings/secrets/actions" target="_blank" rel="noopener noreferrer">Open private repository secrets ↗</a> · <a href="https://github.com/8ry8/PRE1.5.1/actions/workflows/gemini-relay.yml" target="_blank" rel="noopener noreferrer">Open relay deployment workflow ↗</a></p></li>
+          <li><strong>Your Gemini key stays in a Worker secret.</strong><p>The deployment workflow sets this for you. For manual setup in Cloudflare, open <strong>Workers &amp; Pages → pre-gemini-relay → Settings → Variables and Secrets</strong>. Add a <strong>Secret</strong> named <code>GEMINI_API_KEY</code> and paste your key there.</p></li>
+          <li><strong>Protect the relay with a different password.</strong><p>The workflow also sets your chosen secret named <code>RELAY_ACCESS_TOKEN</code>: a random password of at least 32 characters. Do not reuse the Gemini key. Anyone with this password can spend your API quota.</p></li>
+          <li><strong>Set the origin and model.</strong><p>Set <code>ALLOWED_ORIGIN</code> to this website’s origin: <code>${escapeHtml(window.location.origin)}</code> (no path or trailing slash). Set <code>GEMINI_MODEL</code> to a model available to your key. Then connect below.</p></li>
+        </ol>
+        <button class="button button-secondary" data-action="download-gemini-guide">Download step-by-step setup guide</button>
+        <p class="microcopy">The Gemini key must not be added to GitHub Pages build settings. A build-time secret can still leak if included in the browser bundle. Mobile clients remain local-only.</p>
+      </section>
+      <section class="panel connection-panel">
+        <div class="panel-heading"><div><span class="panel-kicker">02 / CONNECT THIS BROWSER</span><h3>Private Gemini relay</h3></div><span class="pill ${state.connection ? 'pill-success' : 'pill-neutral'}">${state.connection ? 'Connected' : 'Not connected'}</span></div>
+        ${state.connection ? `<div class="annotation-box"><p>Connected to <strong>${escapeHtml(state.connection.model)}</strong> via <code>${escapeHtml(connectedRelay?.url ?? '')}</code>. Key and model access checked; generation still depends on quota and billing.</p></div>` : ''}
+        <fieldset class="input-fields" ${busy() ? 'disabled' : ''}>
+          <legend class="sr-only">Relay connection details</legend>
+          <label class="field-label" for="relay-url">Worker URL<input id="relay-url" class="text-input" type="url" value="${escapeHtml(state.relayUrl)}" placeholder="https://pre-gemini-relay.your-account.workers.dev" autocomplete="url" spellcheck="false" /></label>
+          <label class="field-label" for="relay-password">Relay access password — NOT your Gemini API key<input id="relay-password" class="text-input" type="password" placeholder="Your separate RELAY_ACCESS_TOKEN" autocomplete="off" maxlength="256" spellcheck="false" aria-describedby="password-help" /></label>
+          <p id="password-help" class="microcopy">The password stays in page memory, not browser storage or project exports. Reloading or disconnecting clears it. Only the Worker URL is remembered. Use a relay you control.</p>
+          <div class="action-strip"><button class="button button-primary" data-action="connect-gemini">${state.connecting ? 'Checking Gemini…' : 'Test & connect'}</button><button class="button button-secondary" data-action="disconnect-gemini" ${state.connection ? '' : 'disabled'}>Disconnect</button></div>
+        </fieldset>
+        <p class="microcopy">Testing checks model access without generating a prompt. After connecting, return to Workbench, approve sending the draft, and choose <strong>Refine with Gemini</strong>. Nothing is sent automatically.</p>
+        <div class="annotation-box"><p>This relay is for private, single-owner use. It is not a public multi-user AI service. Keep the access password private and set Google-side quota and billing controls.</p></div>
+      </section>
+    </div>
+  `;
+}
+
 function subpageHeading(kicker: string, title: string, description: string): string {
   return `<div class="page-heading"><div><p class="eyebrow">${escapeHtml(kicker)}</p><h2>${escapeHtml(title)}</h2><p class="page-description">${escapeHtml(description)}</p></div><div class="heading-actions"><button class="button button-secondary" data-view="workbench">Back to workbench</button></div></div>`;
 }
@@ -375,16 +445,60 @@ function option(value: string, label: string, selected: string): string {
   return `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(label)}</option>`;
 }
 
-async function refine(): Promise<void> {
-  const modelClass = selectedClass();
-  const tier = selectedTier();
+async function connectGemini(): Promise<void> {
+  if (busy()) return;
+  const password = document.querySelector<HTMLInputElement>('#relay-password')?.value ?? '';
+  state.relayUrl = document.querySelector<HTMLInputElement>('#relay-url')?.value ?? state.relayUrl;
+  state.connecting = true;
+  connectedRelay = null;
+  state.connection = null;
+  state.shareWithGemini = false;
+  state.notice = 'Checking your relay, Gemini key, and model access…';
+  render(); // Remove the password field value before any network I/O.
+  try {
+    const adapter = new GeminiRelay(state.relayUrl, password);
+    const status = await adapter.testConnection();
+    connectedRelay = adapter;
+    state.connection = status;
+    state.relayUrl = adapter.url;
+    try { localStorage.setItem(RELAY_URL_KEY, adapter.url); } catch { /* Optional URL preference only. */ }
+    state.notice = `Gemini connected (${status.model}). Return to Workbench and choose Refine with Gemini. Local mode still works without a provider call.`;
+  } catch (error) {
+    state.notice = error instanceof Error ? error.message : 'Connection failed. Check the Worker setup.';
+  } finally {
+    state.connecting = false;
+    render();
+  }
+}
+
+async function refine(useGemini = false): Promise<void> {
+  if (busy()) return;
+  const adapter = connectedRelay;
+  if (useGemini && (!adapter || !state.shareWithGemini)) {
+    state.notice = 'Connect your private relay and approve sending this draft before using Gemini.';
+    render();
+    return;
+  }
+  if (!state.rawGoal.trim()) {
+    state.notice = 'Enter a goal before refining. No provider request was made.';
+    render();
+    return;
+  }
   const result = refinePrompt({
     rawGoal: state.rawGoal,
     contextBlocks: state.contextBlocks,
-    modelClass,
+    modelClass: selectedClass(),
     targetModel: state.targetModel,
-    outputTier: tier,
+    outputTier: selectedTier(),
   });
+  const preflight = [...result.diagnostics, ...lintRequest(buildRequestPlan(result, result.refinedPrompt), result.refinedPrompt)];
+  if (useGemini && preflight.some((item) => item.severity === 'block')) {
+    state.notice = 'The local pre-flight checks blocked this request. Reduce the input and review the linter before sending to Gemini.';
+    render();
+    return;
+  }
+  // Capture the complete draft before awaiting the provider. Pending requests
+  // cannot be duplicated or mixed with edits, project changes, or history loads.
   const variant: PromptVariant = {
     id: makeId('variant'),
     parentId: state.activeVariant?.id ?? null,
@@ -400,20 +514,55 @@ async function refine(): Promise<void> {
     diagnostics: result.diagnostics,
     evaluation: null,
   };
-  state.activeVariant = variant;
-  state.project = await store.saveVariant(variant);
-  state.evaluation = null;
-  state.stressFindings = [];
-  state.driftFindings = [];
-  state.notice = `Created ${variant.parentId ? 'a branch' : 'a root variant'} with ${variant.citations.length} cited rules. No provider call occurred.`;
-  state.activeView = 'workbench';
+  state.refining = true;
+  state.notice = useGemini ? 'Gemini is refining the draft. No automatic retries will be made.' : 'Applying the local policy engine…';
   render();
+  try {
+    if (useGemini && adapter) {
+      const response = await adapter.refine({
+        prompt: result.refinedPrompt,
+        modelClass: result.modelClass,
+        outputTier: result.outputTier,
+        targetModel: result.targetModel,
+        citations: result.citations.map((citation) => citation.ruleId),
+        projectVariantId: variant.id,
+      });
+      variant.refinedPrompt = response.text;
+      variant.generation = {
+        mode: 'live-provider', provider: response.provider, model: response.model,
+        inputTokens: response.inputTokens, outputTokens: response.outputTokens, requestId: response.requestId,
+      };
+      variant.changes = [...result.changes, {
+        id: makeId('change'), label: 'changed', before: result.refinedPrompt, after: response.text,
+        explanation: 'Gemini rewrote the local draft. This change is unattributed and requires human review; inherited citations do not verify the AI rewrite.',
+      }];
+      variant.diagnostics = [...result.diagnostics, ...lintRequest(buildRequestPlan(result, response.text), response.text), {
+        id: makeId('diag'), severity: 'warning', title: 'AI rewrite needs review',
+        message: 'Rule citations describe the local draft, not independent verification of Gemini’s text. Evaluation and safety checks remain local simulations.',
+        fix: 'Review the AI change in Review & citations before exporting or using the prompt.',
+      }];
+    }
+    state.project = await store.saveVariant(variant);
+    state.activeVariant = variant;
+    state.evaluation = null;
+    state.stressFindings = [];
+    state.driftFindings = [];
+    state.notice = variant.generation
+      ? `Gemini refinement saved (${variant.generation.model}). Review the unattributed AI change before use.`
+      : `Created ${variant.parentId ? 'a branch' : 'a root variant'} with ${variant.citations.length} cited rules. No provider call occurred.`;
+  } catch (error) {
+    state.notice = `${error instanceof Error ? error.message : 'Refinement failed.'} Your previous output is unchanged.`;
+  } finally {
+    state.refining = false;
+    if (useGemini) state.shareWithGemini = false;
+    render();
+  }
 }
 
 async function handleClick(event: MouseEvent): Promise<void> {
   const target = event.target as HTMLElement;
   const button = target.closest<HTMLElement>('[data-action], [data-view]');
-  if (!button) return;
+  if (!button || (button instanceof HTMLButtonElement && button.disabled)) return;
   const view = button.dataset.view as ViewName | undefined;
   if (view) {
     state.activeView = view;
@@ -421,10 +570,21 @@ async function handleClick(event: MouseEvent): Promise<void> {
     return;
   }
   const action = button.dataset.action;
-  if (!action) return;
+  if (!action || busy()) return;
   switch (action) {
     case 'refine': await refine(); break;
+    case 'refine-gemini': await refine(true); break;
+    case 'connect-gemini': await connectGemini(); break;
+    case 'disconnect-gemini':
+      connectedRelay = null;
+      state.connection = null;
+      state.shareWithGemini = false;
+      state.notice = 'Disconnected. The relay password was cleared from page memory. Local mode is still available.';
+      render();
+      break;
+    case 'download-gemini-guide': downloadText('gemini-setup.md', geminiSetupGuide, 'text/markdown'); break;
     case 'new-project':
+      state.shareWithGemini = false;
       state.rawGoal = '';
       state.contextBlocks = [];
       state.activeVariant = null;
@@ -450,6 +610,7 @@ async function handleClick(event: MouseEvent): Promise<void> {
       if (state.activeVariant) downloadText('prompt-variant.json', exportJson(state.activeVariant), 'application/json');
       break;
     case 'remove-context':
+      state.shareWithGemini = false;
       state.contextBlocks = state.contextBlocks.filter((block) => block.id !== button.dataset.id);
       state.notice = 'Context block removed from the pending refinement. Existing variants remain unchanged.';
       render();
@@ -510,6 +671,7 @@ function loadVariant(id: string | undefined, branch: boolean): void {
   if (!id) return;
   const variant = state.project.variants.find((candidate) => candidate.id === id);
   if (!variant) return;
+  state.shareWithGemini = false;
   state.activeVariant = variant;
   state.rawGoal = variant.rawGoal;
   state.classSelection = variant.modelClass;
@@ -523,21 +685,46 @@ function loadVariant(id: string | undefined, branch: boolean): void {
 
 async function handleInput(event: Event): Promise<void> {
   const element = event.target as HTMLInputElement | HTMLTextAreaElement;
+  if (busy()) return;
   if (element.id === 'raw-goal') {
+    state.shareWithGemini = false;
     state.rawGoal = element.value;
-    if (state.classSelection === 'auto' || state.tierSelection === 'auto') render();
+    // Updating auto-detection must not lose the textarea focus/caret on each key.
+    const start = element.selectionStart;
+    const end = element.selectionEnd;
+    const wasFocused = document.activeElement === element;
+    render();
+    const textarea = document.querySelector<HTMLTextAreaElement>('#raw-goal');
+    if (wasFocused && textarea) {
+      textarea.focus();
+      textarea.setSelectionRange(start, end);
+    }
   }
+  if (element.id === 'relay-url') state.relayUrl = element.value;
 }
 
 async function handleChange(event: Event): Promise<void> {
   const element = event.target as HTMLInputElement | HTMLSelectElement;
+  // A blur/change on connection inputs must not re-render and erase the password.
+  if (element.id === 'relay-url' || element.id === 'relay-password' || busy()) return;
+  if (element.id === 'gemini-consent' && element instanceof HTMLInputElement) state.shareWithGemini = element.checked;
+  if (['class-select', 'model-select', 'tier-select'].includes(element.id)) state.shareWithGemini = false;
   if (element.id === 'class-select') state.classSelection = element.value as ClassSelection;
   if (element.id === 'model-select') state.targetModel = element.value;
   if (element.id === 'tier-select') state.tierSelection = element.value as TierSelection;
   if (element.id === 'context-file' && element instanceof HTMLInputElement && element.files?.[0]) {
-    const block = await contextBlockFromFile(element.files[0]);
-    state.contextBlocks = [...state.contextBlocks, block];
-    state.notice = block.status === 'ready' ? `${block.name} was read locally and marked untrusted.` : `${block.name} could not be extracted by the local parser.`;
+    const file = element.files[0];
+    state.shareWithGemini = false;
+    state.extractingContext = true;
+    state.notice = `Reading ${file.name} locally. Wait for extraction before refining.`;
+    render();
+    try {
+      const block = await contextBlockFromFile(file);
+      state.contextBlocks = [...state.contextBlocks, block];
+      state.notice = block.status === 'ready' ? `${block.name} was read locally and marked untrusted.` : `${block.name} could not be extracted by the local parser.`;
+    } finally {
+      state.extractingContext = false;
+    }
   }
   render();
 }

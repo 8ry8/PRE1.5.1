@@ -432,7 +432,8 @@ export function evaluateLocally(variant: PromptVariant): EvaluationResult {
     score: Math.round((passed / cases.length) * 100),
     notes: [
       'This is a deterministic local simulation, not an LLM-as-a-judge result.',
-      'Connect a reviewed provider adapter before using scores as production evidence.',
+      'These scores are local rule-coverage checks, not production evidence or a live AI evaluation.',
+      ...(variant.generation ? ['For this Gemini rewrite, rule coverage is inherited from the local draft. It does not verify the rewritten text.'] : []),
     ],
     cases,
   };
@@ -468,6 +469,14 @@ export function stressTest(variant: PromptVariant): StressFinding[] {
     mitigation: 'Put output shape, word limits, and stop conditions in a final constraints section.',
     ruleId: 'RC-CONSTRAINT-END-006',
   });
+  if (variant.generation) {
+    return findings.map((finding) => ({
+      ...finding,
+      severity: finding.severity === 'low' ? 'medium' : finding.severity,
+      observed: `Local-draft metadata only: ${finding.observed} This does not verify that Gemini preserved the boundary.`,
+      mitigation: `Review the AI rewrite manually. ${finding.mitigation}`,
+    }));
+  }
   return findings;
 }
 

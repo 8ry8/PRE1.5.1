@@ -1,0 +1,71 @@
+name: Deploy private Gemini relay
+
+# Manual only: provider secrets must never run in a PR or a frontend build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gemini-relay-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out approved source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check required secrets without printing their values
+        run: node scripts/relay-deploy-check.mjs validate
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RELAY_ACCESS_TOKEN: ${{ secrets.RELAY_ACCESS_TOKEN }}
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run tests and validate Worker
+        run: |
+          npm test
+          npm run relay:check
+        env:
+          WRANGLER_SEND_METRICS: "false"
+
+      - name: Deploy Worker and configure its private secrets
+        id: worker
+        # Official Cloudflare action, pinned rather than following a mutable tag.
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: relay
+          packageManager: npm
+          wranglerVersion: "4.151.3"
+          command: deploy
+          # The action sends values through stdin, not command-line arguments.
+          secrets: |
+            GEMINI_API_KEY
+            RELAY_ACCESS_TOKEN
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RELAY_ACCESS_TOKEN: ${{ secrets.RELAY_ACCESS_TOKEN }}
+          WRANGLER_SEND_METRICS: "false"
+
+      - name: Report URL and verify Gemini access (no text generation)
+        run: node scripts/relay-deploy-check.mjs verify
+        env:
+          RELAY_URL: ${{ steps.worker.outputs.deployment-url }}
+          RELAY_ACCESS_TOKEN: ${{ secrets.RELAY_ACCESS_TOKEN }}
