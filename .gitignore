@@ -5,3 +5,11 @@ dist/
 android/.gradle/
 android/local.properties
 apple/.build/
+
+# Local credentials and Worker output must never be committed.
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+.wrangler/

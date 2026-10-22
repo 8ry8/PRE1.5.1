@@ -60,8 +60,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run contract tests
+      - name: Run tests
         run: npm test
+
+      - name: Validate Gemini relay bundle (no secrets or deployment)
+        run: npm run relay:check
+        env:
+          WRANGLER_SEND_METRICS: "false"
 
       - name: Build static site
         run: npm run build

@@ -1,0 +1,23 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "pre-gemini-relay",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-21",
+  "workers_dev": true,
+  "vars": {
+    // An origin has no /PRE1.5.1/ path or trailing slash.
+    "ALLOWED_ORIGIN": "https://8ry8.github.io",
+    // Example model ID. Change this to a generateContent model available to your key.
+    "GEMINI_MODEL": "gemini-2.5-flash"
+  },
+  "ratelimits": [
+    {
+      "name": "GEMINI_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 10, "period": 60 }
+    }
+  ],
+  // Do not collect prompts or credentials in application logs.
+  "observability": { "enabled": false }
+  // GEMINI_API_KEY and RELAY_ACCESS_TOKEN are secrets, never vars here.
+}

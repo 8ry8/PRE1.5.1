@@ -102,6 +102,16 @@ export interface PromptVariant {
   changes: ChangeRecord[];
   diagnostics: Diagnostic[];
   evaluation: EvaluationResult | null;
+  // Optional for backward compatibility: absence means deterministic local mode.
+  // These are provider results only, never connection details or credentials.
+  generation?: {
+    mode: 'live-provider';
+    provider: string;
+    model: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    requestId?: string;
+  };
 }
 
 export interface PromptProject {

@@ -8,12 +8,18 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --test tests/contract.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "relay:deploy": "wrangler deploy --config relay/wrangler.jsonc",
+    "relay:secret": "wrangler secret put --config relay/wrangler.jsonc",
+    "relay:check": "wrangler deploy --dry-run --config relay/wrangler.jsonc"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "esbuild": "^0.25.12",
+    "jsdom": "^26.1.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "wrangler": "^4.151.3"
   },
   "dependencies": {
     "fflate": "^0.8.3",
