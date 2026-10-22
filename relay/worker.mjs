@@ -118,7 +118,10 @@ async function callGemini(env, body, fetchProvider) {
       method: body ? 'POST' : 'GET',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
       body: body ? JSON.stringify(body) : undefined,
-      redirect: 'error',
+      // Cloudflare Workers do not implement redirect: 'error'; constructing
+      // that request throws before it reaches Google. Manual mode exposes a
+      // 3xx response to the status handling below without forwarding the key.
+      redirect: 'manual',
       signal: controller.signal,
     });
     // Do not relay Google's raw error body: it can include sensitive details.
