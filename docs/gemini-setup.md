@@ -35,7 +35,7 @@ Open [Actions → Deploy private Gemini relay](https://github.com/8ry8/PRE1.5.1/
 - The workflow runs only on `main`, by explicit dispatch—not on pull requests or every website build.
 - Missing or invalid setup values stop deployment with the **names** to fix, never their values.
 - The official, pinned Cloudflare action uploads `GEMINI_API_KEY` and `RELAY_ACCESS_TOKEN` as Worker secrets and deploys the checked-in rate-limit configuration. No manual secret copying in Cloudflare is needed for this route.
-- The final step reports your **Worker URL** in the run summary and checks `/api/status` with the relay password. This verifies model access, not generation quota or billing.
+- The final step reports your **Worker URL** in the run summary and checks `/api/status` with the relay password. This verifies model access, not generation quota or billing. If the check fails, the run summary and log include the relay's own setup message (for example **Gemini model not found** or **Gemini rejected the request**), never secret values.
 - If your Cloudflare account first needs a `workers.dev` subdomain, complete that setup in **Workers & Pages** and rerun the workflow. If the example model is unavailable, update `GEMINI_MODEL` in `relay/wrangler.jsonc` and rerun after that change is on `main`.
 - If deployment succeeds but the Gemini check fails, the Worker still exists. Use the URL in the summary and **Test & connect** to diagnose the key/model configuration. Do not assume live AI is ready until that check succeeds.
 
@@ -88,7 +88,7 @@ These commands ask for secret values privately. Do not put their values into she
 | Setting | Value / meaning |
 | --- | --- |
 | `ALLOWED_ORIGIN` | `https://8ry8.github.io` for this repository's Pages site. No trailing slash and no `/PRE1.5.1/` path. If using a custom domain, set its exact HTTPS origin instead. |
-| `GEMINI_MODEL` | The example is `gemini-2.5-flash`. Set this to a current `generateContent` model available to **your** key; availability can change. Do not use the workbench's `standard-fast`, `reasoning-balanced`, or `agentic-sandbox` profile labels here. |
+| `GEMINI_MODEL` | The default is `gemini-3.8-flash`, a stable model Google offers to new API keys (as of October 2026). Google now limits `gemini-2.5-*` models to projects that used them before, so a newly created key gets **Gemini model not found** for them. Set this to a current `generateContent` model available to **your** key; availability can change. Do not use the workbench's `standard-fast`, `reasoning-balanced`, or `agentic-sandbox` profile labels here. |
 | `GEMINI_LIMITER` | A required native rate-limit binding, created by the checked-in configuration: 10 requests per 60 seconds per key/location. |
 
 If changing the origin/model, edit `relay/wrangler.jsonc` and run `npm run relay:deploy` again. This keeps later deployments consistent with your settings; secrets remain separate. A preview uses a different origin from GitHub Pages—use the published Pages site, or deliberately change `ALLOWED_ORIGIN` to the preview's exact origin for testing.
@@ -124,7 +124,7 @@ The website remembers only the Worker URL. The access password is kept in page m
 - **Could not reach the relay:** verify HTTPS, the base URL, deployment, and exact `ALLOWED_ORIGIN`. CORS errors are usually an origin mismatch. CORS is not authentication; the password is still mandatory.
 - **Access password incorrect:** use the secret `RELAY_ACCESS_TOKEN`, not the Gemini API key. Re-enter it after a page reload. Rotating it invalidates old connections on their next request.
 - **Relay setup incomplete:** check both secrets, the origin/model variables, and the `GEMINI_LIMITER` binding. The relay fails closed if any required setting is absent or the two secrets are the same.
-- **Gemini rejected the request / model not found:** check key validity, API restrictions, available models, and billing in Google AI Studio. Update `GEMINI_MODEL` if the example model is unavailable or retired.
+- **Gemini rejected the request / model not found:** check key validity, API restrictions, available models, and billing in Google AI Studio. Update `GEMINI_MODEL` if the configured model is unavailable to your key or retired (for example, new keys cannot use `gemini-2.5-flash`).
 - **Quota / rate limit:** wait, then check Google quota/billing. Do not repeatedly press Refine. Cloudflare's limiter is location-scoped and approximate, not a global monthly budget.
 - **Input too large:** the draft is limited to 40,000 characters and the JSON body to 128 KiB. Reduce attachments. The server caps output at 8,192 tokens and waits at most 45 seconds for Gemini; the browser waits at most 60 seconds for the relay.
 - **Safety block, empty or truncated result:** no new variant is saved. Review/reduce the input. A timed-out or rejected response can still consume provider quota; the app never retries automatically.
