@@ -113,6 +113,42 @@ test('relay configuration uses a valid model ID and disables extra preview URLs'
   assert.equal(config.preview_urls, false);
 });
 
+// Line-based reader for a workflow's `on:` block, so no YAML dependency is
+// needed: maps each two-space-indented trigger to its non-comment body lines.
+function workflowTriggers(text) {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^on:\s*$/.test(line));
+  assert.notEqual(start, -1, 'the workflow must declare its triggers in an on: block');
+  const triggers = {};
+  let current;
+  for (const line of lines.slice(start + 1)) {
+    if (/^[^\s#]/.test(line)) break; // the next top-level key ends the block
+    const key = line.match(/^  ([A-Za-z_]+):/);
+    if (key) triggers[current = key[1]] = [];
+    else if (current && line.trim() && !line.trim().startsWith('#')) triggers[current].push(line.trim());
+  }
+  return triggers;
+}
+
+test('relay deploy starts only from explicit dispatches and never reads caller-supplied event data', async () => {
+  const relay = await readFile(new URL('../.github/workflows/gemini-relay.yml', import.meta.url), 'utf8');
+  const triggers = workflowTriggers(relay);
+  // An allowlist, not a denylist: push, pull_request(_target), schedule,
+  // workflow_run, and any other automatic trigger must never reach these secrets.
+  assert.deepEqual(Object.keys(triggers).sort(), ['repository_dispatch', 'workflow_dispatch']);
+  assert.deepEqual(triggers.workflow_dispatch, [], 'Run workflow takes no inputs');
+  // Integrations without Actions: write (HTTP 403 on workflow_dispatch) send
+  // this single event type; no other repository_dispatch event deploys.
+  assert.deepEqual(triggers.repository_dispatch, ['types: [deploy-gemini-relay]']);
+  // Whoever dispatches controls the event payload, so no step may interpolate it.
+  assert.doesNotMatch(relay, /\$\{\{[^}]*\b(github\.event|inputs)\b/);
+  // repository_dispatch always runs on the default branch; still require main.
+  assert.match(relay, /if: github\.ref == 'refs\/heads\/main'/);
+
+  assert.deepEqual(workflowTriggers('on:\n  workflow_dispatch:\n  # note\n  push:\n    branches: [main]\n\njobs:\n  x:\n'),
+    { workflow_dispatch: [], push: ['branches: [main]'] }, 'the reader must see every trigger');
+});
+
 test('relay deploy is manual/main-only and secrets are isolated from Pages builds', async () => {
   const relay = await readFile(new URL('../.github/workflows/gemini-relay.yml', import.meta.url), 'utf8');
   const pages = await readFile(new URL('../.github/workflows/pages.yml', import.meta.url), 'utf8');

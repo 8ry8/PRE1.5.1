@@ -1,8 +1,19 @@
 name: Deploy private Gemini relay
 
-# Manual only: provider secrets must never run in a PR or a frontend build.
+# Explicit starts only: provider secrets must never run in a PR, on a push, or
+# in a frontend build. Start a deployment in either of two ways:
+#   1. Actions -> Deploy private Gemini relay -> Run workflow (workflow_dispatch).
+#   2. A repository_dispatch event of type deploy-gemini-relay. Use this from an
+#      integration whose token lacks the Actions: write permission that
+#      workflow_dispatch requires (GitHub answers "403: Resource not accessible
+#      by integration"); this event needs only Contents: write:
+#        gh api repos/8ry8/PRE1.5.1/dispatches -f event_type=deploy-gemini-relay
+# GitHub runs repository_dispatch from the default branch's latest commit. This
+# workflow never reads caller-supplied event data (payloads or inputs).
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [deploy-gemini-relay]
 
 permissions:
   contents: read
