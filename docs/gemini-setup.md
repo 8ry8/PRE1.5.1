@@ -30,9 +30,15 @@ The **Deploy private Gemini relay** GitHub Actions workflow handles dependency i
 
 ### Run the automated deployment
 
-Open [Actions → Deploy private Gemini relay](https://github.com/8ry8/PRE1.5.1/actions/workflows/gemini-relay.yml), choose **Run workflow**, select **main**, and run it. Alternatively, tell the coding agent that you have saved the secrets (do not send their values) so it can try to start the workflow and inspect its result.
+Open [Actions → Deploy private Gemini relay](https://github.com/8ry8/PRE1.5.1/actions/workflows/gemini-relay.yml), choose **Run workflow**, select **main**, and run it. Alternatively, tell the coding agent that you have saved the secrets (do not send their values) so it can start the workflow and inspect its result.
 
-- The workflow runs only on `main`, by explicit dispatch—not on pull requests or every website build.
+A coding agent or other GitHub integration may be refused **Run workflow** with `HTTP 403: Resource not accessible by integration`, because that API requires the **Actions: write** permission. It can start the same deployment with a `deploy-gemini-relay` repository dispatch event instead, which requires only **Contents: write**. Reconnecting the integration does not add a permission it never requests.
+
+```bash
+gh api repos/8ry8/PRE1.5.1/dispatches -f event_type=deploy-gemini-relay
+```
+
+- The workflow runs only on `main`, and only when explicitly started by **Run workflow** or that one dispatch event type. It never runs on pull requests, pushes, or website builds. A dispatch event always deploys the latest commit on `main`, and the workflow ignores any data sent with it.
 - Missing or invalid setup values stop deployment with the **names** to fix, never their values.
 - The official, pinned Cloudflare action uploads `GEMINI_API_KEY` and `RELAY_ACCESS_TOKEN` as Worker secrets and deploys the checked-in rate-limit configuration. No manual secret copying in Cloudflare is needed for this route.
 - The final step reports your **Worker URL** in the run summary and checks `/api/status` with the relay password. This verifies model access, not generation quota or billing. If the check fails, the run summary and log include the relay's own setup message (for example **Gemini model not found** or **Gemini rejected the request**), never secret values.
