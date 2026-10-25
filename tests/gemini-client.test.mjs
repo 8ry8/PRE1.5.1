@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
+// The relay's own server budget, so the client's timeout can be pinned against
+// it: the browser must always outlive the Worker to report its real message.
+import { PROVIDER_TIMEOUT_MS } from '../relay/worker.mjs';
 
 const bundle = await build({ entryPoints: ['src/ai/gemini.ts'], bundle: true, write: false, format: 'esm', platform: 'node', target: 'es2022' });
 const { GeminiRelay, normalizeRelayUrl } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
@@ -106,7 +109,14 @@ test('browser timeout aborts and does not automatically retry', async (t) => {
     options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
   }));
   const pending = client.testConnection();
-  t.mock.timers.tick(60_000);
+  // Still inside the browser's own limit, but past the relay's entire server
+  // budget (one attempt plus a fallback, which share that budget). The client
+  // must not have given up yet: it has to outlive the Worker so it can report
+  // the relay's real message instead of a bare abort.
+  t.mock.timers.tick(PROVIDER_TIMEOUT_MS);
+  assert.equal(calls[0][1].signal.aborted, false, "the browser must outlive the relay's server budget");
+  // The client aborts at 210s: exactly the 30s margin over the relay's 180s.
+  t.mock.timers.tick(210_000 - PROVIDER_TIMEOUT_MS);
   await assert.rejects(pending, /timed out.*no automatic retry/i);
   assert.equal(calls.length, 1);
   assert.equal(calls[0][1].signal.aborted, true);
@@ -119,6 +129,6 @@ test('browser timeout also covers a stalled response body', async (t) => {
   })));
   const pending = client.testConnection();
   await Promise.resolve();
-  t.mock.timers.tick(60_000);
+  t.mock.timers.tick(210_000);
   await assert.rejects(pending, /timed out.*no automatic retry/i);
 });

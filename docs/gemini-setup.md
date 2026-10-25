@@ -95,7 +95,8 @@ These commands ask for secret values privately. Do not put their values into she
 | --- | --- |
 | `ALLOWED_ORIGIN` | `https://8ry8.github.io` for this repository's Pages site. No trailing slash and no `/PRE1.5.1/` path. If using a custom domain, set its exact HTTPS origin instead. |
 | `GEMINI_MODEL` | The default is `gemini-3.8-flash`, a stable model Google offers to new API keys (as of October 2026). Google now limits `gemini-2.5-*` models to projects that used them before, so a newly created key gets **Gemini model not found** for them. Set this to a current `generateContent` model available to **your** key; availability can change. Do not use the workbench's `standard-fast`, `reasoning-balanced`, or `agentic-sandbox` profile labels here. |
-| `GEMINI_LIMITER` | A required native rate-limit binding, created by the checked-in configuration: 10 requests per 60 seconds per key/location. |
+| `GEMINI_FALLBACK_MODEL` | The default is `gemini-3.5-flash-lite`. Tried **once, automatically**, when the primary model fails on the provider side — unavailable, rejected, or an unreadable reply. It is **not** tried for a quota/rate-limit `429`, a safety block, an incomplete generation, or a timeout, so a fallback never repeats a charge for the same blocked content or burns quota that is already exhausted. Both attempts share one 180-second server budget, so a fallback cannot double the wait. The variant records the model that actually answered. Delete this line (or set it to `""`) for single-model behavior with no fallback. Both models accept the relay's fixed `low` thinking level; Flash-Lite's own default is the lighter `minimal`. |
+| `GEMINI_LIMITER` | A required native rate-limit binding, created by the checked-in configuration: 10 requests per 60 seconds per key/location. A fallback attempt is a second upstream call and consumes a second unit of this limit. |
 
 If changing the origin/model, edit `relay/wrangler.jsonc` and run `npm run relay:deploy` again. This keeps later deployments consistent with your settings; secrets remain separate. A preview uses a different origin from GitHub Pages—use the published Pages site, or deliberately change `ALLOWED_ORIGIN` to the preview's exact origin for testing.
 
@@ -122,7 +123,8 @@ The website remembers only the Worker URL. The access password is kept in page m
 - Saves the returned prompt with actual provider/model metadata and optional usage counts. Target prompt profiles remain separate from the Gemini model doing the rewrite.
 - Records the AI rewrite as an **unattributed change requiring review**. Inherited citations describe the local draft; they are not proof that Gemini followed or verified every rule.
 - Keeps evaluations, stress tests, and drift checks local simulations. Connecting Gemini does not enable a live LLM judge or live tools. Android/Apple drafts remain local-only.
-- Does not silently fall back to local output after an AI failure. The previous variant stays visible. No automatic retry is made, to avoid duplicate charges.
+- Does not silently fall back to local output after an AI failure. The previous variant stays visible.
+- Makes **at most one** automatic retry, and only against `GEMINI_FALLBACK_MODEL`, and only when the primary model failed on the provider side. It never retries the same model, never retries a quota `429`, safety block, incomplete generation, or timeout, and both attempts share one 180-second budget. A timed-out primary request can still be billed by Google even though the relay produced no output, so a fallback is not free; the saved variant always names the model that actually answered.
 
 ## Limits and troubleshooting
 
@@ -132,8 +134,9 @@ The website remembers only the Worker URL. The access password is kept in page m
 - **Relay setup incomplete:** check both secrets, the origin/model variables, and the `GEMINI_LIMITER` binding. The relay fails closed if any required setting is absent or the two secrets are the same.
 - **Gemini rejected the request / model not found:** check key validity, API restrictions, available models, and billing in Google AI Studio. Update `GEMINI_MODEL` if the configured model is unavailable to your key or retired (for example, new keys cannot use `gemini-2.5-flash`).
 - **Quota / rate limit:** wait, then check Google quota/billing. Do not repeatedly press Refine. Cloudflare's limiter is location-scoped and approximate, not a global monthly budget.
-- **Input too large:** the draft is limited to 40,000 characters and the JSON body to 128 KiB. Reduce attachments. The server caps output at 8,192 tokens and waits at most 45 seconds for Gemini; the browser waits at most 60 seconds for the relay.
-- **Safety block, empty or truncated result:** no new variant is saved. Review/reduce the input. A timed-out or rejected response can still consume provider quota; the app never retries automatically.
+- **Input too large:** the draft is limited to 40,000 characters and the JSON body to 128 KiB. Reduce attachments. The server caps output at 8,192 tokens and caps reasoning effort at the `low` thinking level; it allows at most 180 seconds for Gemini across the primary **and** any fallback attempt, while the browser waits at most 210 seconds for the relay. The browser limit is deliberately the longer one so you see the relay's own explanation rather than a bare timeout.
+- **Gemini timed out:** both configured models are thinking models, so a large draft near the output cap can be slow. Reduce the draft or attachments. The 180-second budget is shared, so a slow primary leaves the fallback less time; a timeout is never retried. A timed-out request may still be billed.
+- **Safety block, empty or truncated result:** no new variant is saved, and no fallback model is tried. Review/reduce the input. A timed-out or rejected response can still consume provider quota.
 
 This is a private personal-use connection, **not** production multi-tenant authentication. Do not distribute the password to website visitors or remove the guard for public use. A public service needs accounts, per-user authorization and quotas, abuse controls, and a reviewed privacy policy.
 

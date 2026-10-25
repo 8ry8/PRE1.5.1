@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { relayErrorHint, validateDeploymentSecrets, verifyRelayConnection, workerBaseUrl } from '../scripts/relay-deploy-check.mjs';
+import { PROVIDER_TIMEOUT_MS } from '../relay/worker.mjs';
 
 const token = 'test-only-relay-password-with-32-characters';
 const url = 'https://pre-gemini-relay.test-account.workers.dev';
@@ -111,6 +112,35 @@ test('relay configuration uses a valid model ID and disables extra preview URLs'
   assert.equal(config.vars.ALLOWED_ORIGIN, 'https://8ry8.github.io');
   assert.equal(config.workers_dev, true);
   assert.equal(config.preview_urls, false);
+});
+
+test('the shipped fallback model is valid, distinct, and accepted by the Worker', async () => {
+  const text = await readFile(new URL('../relay/wrangler.jsonc', import.meta.url), 'utf8');
+  const { config } = ts.parseConfigFileTextToJson('wrangler.jsonc', text);
+  const fallback = config.vars.GEMINI_FALLBACK_MODEL;
+  assert.equal(fallback, 'gemini-3.5-flash-lite');
+  assert.match(fallback, /^gemini-[a-zA-Z0-9._-]{1,100}$/, 'same rule the Worker enforces');
+  assert.notEqual(fallback, config.vars.GEMINI_MODEL, 'a fallback identical to the primary is pointless and the Worker fails closed on it');
+});
+
+test('the browser and CI checks outlive the relay server budget', async () => {
+  // One budget shared by the primary and the fallback attempt.
+  assert.equal(PROVIDER_TIMEOUT_MS, 180_000);
+  const client = await readFile(new URL('../src/ai/gemini.ts', import.meta.url), 'utf8');
+  const check = await readFile(new URL('../scripts/relay-deploy-check.mjs', import.meta.url), 'utf8');
+  const clientTimeout = Number(client.match(/controller\.abort\(\), (\d[\d_]*)\)/)[1].replace(/_/g, ''));
+  const checkTimeout = Number(check.match(/AbortSignal\.timeout\((\d[\d_]*)\)/)[1].replace(/_/g, ''));
+  // If either waited for less than the Worker, it would abort first and report a
+  // bare timeout instead of the relay's own credential-free setup message.
+  assert.equal(clientTimeout, 210_000);
+  assert.equal(checkTimeout, 210_000);
+  assert.ok(clientTimeout > PROVIDER_TIMEOUT_MS, 'the browser must outlive the relay');
+  assert.ok(checkTimeout > PROVIDER_TIMEOUT_MS, 'the CI check must outlive the relay');
+  // Both models are thinking models, so the shared cap on reasoning effort is
+  // what keeps a large draft inside that budget.
+  const worker = await readFile(new URL('../relay/worker.mjs', import.meta.url), 'utf8');
+  assert.match(worker, /thinkingConfig: \{ thinkingLevel: THINKING_LEVEL \}/);
+  assert.match(worker, /const THINKING_LEVEL = 'low';/);
 });
 
 // Line-based reader for a workflow's `on:` block, so no YAML dependency is

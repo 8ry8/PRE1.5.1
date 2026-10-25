@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { handleRequest } from '../relay/worker.mjs';
+import worker, { handleRequest, PROVIDER_TIMEOUT_MS } from '../relay/worker.mjs';
 
 const ORIGIN = 'https://8ry8.github.io';
 const TOKEN = 'test-only-relay-password-with-32-characters';
@@ -30,6 +30,11 @@ function upstream(reply = generation, status = 200) {
   return { calls, fetcher: async (...args) => { calls.push(args); return Response.json(reply, { status }); } };
 }
 const mustNotCall = async () => { assert.fail('Blocked request must not reach Gemini'); };
+
+// A relay configured with the checked-in fallback model, as wrangler.jsonc ships it.
+function fallbackEnv(overrides = {}) {
+  return env({ GEMINI_FALLBACK_MODEL: 'gemini-fallback', ...overrides });
+}
 
 async function expectFailure(req, configuration, code, pattern) {
   const result = await handleRequest(req, configuration, mustNotCall);
@@ -155,7 +160,7 @@ test('valid refinement uses fixed Google host, server model, headers, and bounde
   assert.equal(options.redirect, 'manual');
   assert.equal(options.headers['x-goog-api-key'], KEY);
   const body = JSON.parse(options.body);
-  assert.deepEqual(body.generationConfig, { candidateCount: 1, maxOutputTokens: 8192 });
+  assert.deepEqual(body.generationConfig, { candidateCount: 1, maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: 'low' } });
   assert.match(body.systemInstruction.parts[0].text, /not the executor/);
   assert.equal(JSON.parse(body.contents[0].parts[0].text).draft, input.prompt);
   assert.equal(body.tools, undefined);
@@ -213,7 +218,7 @@ test('provider timeout aborts with no automatic retry', async (t) => {
     return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }));
   });
   await started;
-  t.mock.timers.tick(45_000);
+  t.mock.timers.tick(180_000);
   const result = await pending;
   assert.equal(result.status, 504);
   assert.match((await result.json()).error, /timed out.*no automatic retry/i);
@@ -237,8 +242,165 @@ test('provider timeout also aborts a stalled response body', async (t) => {
     },
   })));
   await started;
-  t.mock.timers.tick(45_000);
+  t.mock.timers.tick(180_000);
   const result = await pending;
   assert.equal(result.status, 504);
   assert.match((await result.json()).error, /timed out/);
+});
+
+test('a provider-side failure falls back once and reports the model that actually answered', async () => {
+  const calls = [];
+  const result = await handleRequest(request(), fallbackEnv(), async (url, options) => {
+    calls.push({ url, options });
+    // 404/400/401/403/500 all map to a 502 provider failure worth one retry.
+    return url.includes('gemini-test:generateContent')
+      ? Response.json({ error: `${KEY} ${TOKEN} private detail` }, { status: 404 })
+      : Response.json({ ...generation, modelVersion: 'gemini-fallback-served' });
+  });
+  assert.equal(result.status, 200);
+  const output = await result.json();
+  // The saved variant must name the fallback, never the primary that failed.
+  assert.equal(output.model, 'gemini-fallback-served');
+  assert.equal(output.text, 'Improved prompt.');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent');
+  assert.equal(calls[1].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-fallback:generateContent');
+  // The retry repeats the same bounded request: same key, same fixed host,
+  // same generation config, and no credential or provider detail leaked.
+  assert.equal(calls[1].options.headers['x-goog-api-key'], KEY);
+  assert.equal(calls[1].options.redirect, 'manual');
+  assert.deepEqual(JSON.parse(calls[1].options.body).generationConfig, JSON.parse(calls[0].options.body).generationConfig);
+  const text = await Promise.resolve(JSON.stringify(output));
+  for (const secret of [KEY, TOKEN, 'private detail']) assert.equal(text.includes(secret), false);
+});
+
+test('quota, safety, and client failures never trigger the fallback model', async () => {
+  for (const [providerStatus, reply, expected] of [
+    // 429: the account is out of quota, so a second model fails too and would
+    // only burn the shared time budget.
+    [429, { error: 'quota' }, 429],
+    // A safety block or truncated generation is a 422 about the content, not a
+    // provider outage; re-asking another model would be a duplicate charge.
+    [200, { promptFeedback: { blockReason: 'SAFETY' } }, 422],
+    [200, { candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: 'partial' }] } }] }, 422],
+    [200, { candidates: [{ finishReason: 'STOP', content: { parts: [{ thought: true, text: 'x' }] } }] }, 502],
+  ]) {
+    const calls = [];
+    const result = await handleRequest(request(), fallbackEnv(), async (...args) => {
+      calls.push(args);
+      return Response.json(reply, { status: providerStatus });
+    });
+    assert.equal(result.status, expected, `status ${providerStatus}`);
+    assert.equal(calls.length, 1, `status ${providerStatus} must not reach the fallback model`);
+    assert.equal(calls[0][0].includes('gemini-fallback'), false);
+  }
+  // Requests rejected before any upstream call still never reach Google at all.
+  await expectFailure(request('/api/refine', { body: JSON.stringify({ ...input, modelClass: 'other' }) }), fallbackEnv(), 400);
+});
+
+test('the fallback model is rate-limited as a second upstream call', async () => {
+  let accountChecks = 0;
+  const calls = [];
+  const configuration = fallbackEnv({
+    GEMINI_LIMITER: {
+      limit: async ({ key }) => {
+        if (key !== 'personal-gemini-account') return { success: true };
+        // First unit authorizes the primary; the second is refused, so the
+        // fallback must not be attempted and the primary error is reported.
+        return { success: ++accountChecks < 2 };
+      },
+    },
+  });
+  const result = await handleRequest(request(), configuration, async (...args) => {
+    calls.push(args[0]);
+    return Response.json({ error: 'unavailable' }, { status: 500 });
+  });
+  assert.equal(result.status, 502);
+  assert.match((await result.json()).error, /Gemini is unavailable/);
+  assert.equal(calls.length, 1, 'a refused rate-limit unit must not start the fallback');
+  assert.equal(accountChecks, 2, 'the fallback must consume its own account rate-limit unit');
+});
+
+test('an invalid or duplicate fallback model fails closed instead of reaching Google', async () => {
+  for (const fallback of ['gemini-test', '../../other-host', 'gpt-expensive', 'AIza' + 'x'.repeat(35), 'x'.repeat(120), 42]) {
+    await expectFailure(request(), fallbackEnv({ GEMINI_FALLBACK_MODEL: fallback }), 503, /setup is incomplete/);
+  }
+  // Unset and empty both mean "single model, no fallback" and must still work.
+  for (const configuration of [env(), fallbackEnv({ GEMINI_FALLBACK_MODEL: '' })]) {
+    const { fetcher, calls } = upstream();
+    const result = await handleRequest(request(), configuration, fetcher);
+    assert.equal(result.status, 200);
+    assert.equal(calls.length, 1);
+  }
+});
+
+test('the status check never falls back, so a broken primary model stays visible', async () => {
+  const calls = [];
+  const result = await handleRequest(request('/api/status'), fallbackEnv(), async (...args) => {
+    calls.push(args[0]);
+    return Response.json({ error: 'no such model' }, { status: 404 });
+  });
+  assert.equal(result.status, 502);
+  assert.match((await result.json()).error, /model not found/);
+  assert.equal(calls.length, 1, '/api/status must report on the configured primary model only');
+  assert.equal(calls[0].includes('gemini-fallback'), false);
+});
+
+// Drives the shared request budget through the injected clock. Mock timers are
+// not usable for this case: tick() inside a fetcher fires the deadline abort
+// before the primary's response body has been read.
+function fakeClock(start = 1_000_000) {
+  const state = { current: start };
+  return { start, now: () => state.current, advance: (ms) => { state.current += ms; } };
+}
+
+test('both models share one server deadline, so a fallback cannot double the wait', async (t) => {
+  // Mock timers keep the test instant; the injected clock still decides how much
+  // budget the fallback is given, which is the behavior under test.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const clock = fakeClock();
+  const calls = [];
+  let markFallback;
+  const fallbackStarted = new Promise((resolve) => { markFallback = resolve; });
+  const pending = handleRequest(request(), fallbackEnv(), async (url, options) => {
+    calls.push(url);
+    if (url.includes('gemini-test:generateContent')) {
+      // The primary burns most of the budget, then fails with a retryable 502.
+      clock.advance(170_000);
+      return Response.json({ error: 'unavailable' }, { status: 500 });
+    }
+    // The fallback then hangs; only the shared deadline can end it.
+    markFallback();
+    return new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+    });
+  }, clock.now);
+  // Awaiting the fetcher's own signal guarantees the fallback's deadline timer
+  // is already armed when the clock moves, so the tick below is decisive.
+  await fallbackStarted;
+  // The fallback's timer was armed for the 10s remainder, so advancing 10s ends
+  // the whole request. Had it restarted its own 180s budget this tick would not
+  // fire and the request would still be pending.
+  t.mock.timers.tick(10_000);
+  const result = await pending;
+  assert.equal(result.status, 504);
+  assert.match((await result.json()).error, /timed out/);
+  assert.equal(calls.length, 2, 'the fallback did start, with only the leftover budget');
+  assert.ok(calls[1].includes('gemini-fallback:generateContent'));
+  // No further attempt exists at the 360s mark a per-attempt budget would allow.
+  t.mock.timers.tick(360_000);
+  assert.equal(calls.length, 2);
+});
+
+test('an exhausted budget never starts the fallback, so the primary error is reported', async () => {
+  const clock = fakeClock();
+  const calls = [];
+  const result = await handleRequest(request(), fallbackEnv(), async (url) => {
+    calls.push(url);
+    clock.advance(PROVIDER_TIMEOUT_MS);
+    return Response.json({ error: 'unavailable' }, { status: 500 });
+  }, clock.now);
+  assert.equal(result.status, 502);
+  assert.match((await result.json()).error, /Gemini is unavailable/);
+  assert.equal(calls.length, 1, 'no budget left means no second attempt');
 });
