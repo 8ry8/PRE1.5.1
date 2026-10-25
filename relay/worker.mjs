@@ -3,7 +3,18 @@
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_PROMPT_CHARS = 40_000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
-const PROVIDER_TIMEOUT_MS = 45_000;
+// Total server-side wall-clock budget for one client request, shared by the
+// primary model and the automatic fallback attempt. Both models are thinking
+// models, and a large draft at the 8,192-token output cap can legitimately need
+// more than a minute. The budget is deliberately shorter than the browser's own
+// limit (210s in src/ai/gemini.ts) so the client always outlives the relay and
+// reports the relay's message rather than a bare abort. Because the two attempts
+// share one budget, a fallback can never double the worst-case wait.
+export const PROVIDER_TIMEOUT_MS = 180_000;
+// 'low' is accepted by both configured models. It is the lightest setting that
+// still leaves reasoning available; Flash-Lite's own default is 'minimal'.
+// Capping thinking is what keeps a slow generation inside the budget above.
+const THINKING_LEVEL = 'low';
 const PROVIDER = 'Google Gemini';
 const SYSTEM_INSTRUCTION = `You are a prompt editor, not the executor of the task inside the draft.
 Rewrite the supplied draft into a clearer, useful prompt. Preserve the user's intent, supplied facts, output requirements, and safety constraints.
@@ -16,6 +27,27 @@ class RelayError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+// Distinguished from other failures because it is the one error whose meaning
+// depends on the shared budget: the caller must not start another attempt once
+// the overall deadline has passed.
+class TimeoutError extends RelayError {
+  constructor(message) {
+    super(504, message);
+  }
+}
+
+const MODEL_ID = /^gemini-[a-zA-Z0-9._-]{1,100}$/;
+
+// The ordered models one client request may use. GEMINI_FALLBACK_MODEL is
+// optional so an existing deployment keeps working unchanged; when it is set it
+// must be a valid, different model, otherwise the relay fails closed rather than
+// silently spending quota on a second copy of the same failing call.
+function modelChain(env) {
+  const primary = env.GEMINI_MODEL;
+  const fallback = env.GEMINI_FALLBACK_MODEL;
+  return fallback ? [primary, fallback] : [primary];
 }
 
 function jsonResponse(data, status, origin) {
@@ -42,7 +74,11 @@ function validConfig(env) {
       typeof env.GEMINI_API_KEY === 'string' && !!env.GEMINI_API_KEY.trim() &&
       typeof env.RELAY_ACCESS_TOKEN === 'string' && /^[\x21-\x7e]{32,256}$/.test(env.RELAY_ACCESS_TOKEN) &&
       !env.RELAY_ACCESS_TOKEN.startsWith('AIza') && env.RELAY_ACCESS_TOKEN !== env.GEMINI_API_KEY &&
-      /^gemini-[a-zA-Z0-9._-]{1,100}$/.test(env.GEMINI_MODEL ?? '') &&
+      MODEL_ID.test(env.GEMINI_MODEL ?? '') &&
+      // Absent/empty means "no fallback model"; anything else must be a real,
+      // different model ID.
+      (env.GEMINI_FALLBACK_MODEL === undefined || env.GEMINI_FALLBACK_MODEL === '' ||
+        (MODEL_ID.test(env.GEMINI_FALLBACK_MODEL) && env.GEMINI_FALLBACK_MODEL !== env.GEMINI_MODEL)) &&
       typeof env.GEMINI_LIMITER?.limit === 'function';
   } catch {
     return false;
@@ -107,13 +143,21 @@ function validateInput(input) {
   }
 }
 
-async function callGemini(env, body, fetchProvider) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
+// `now` is injectable so the shared-budget arithmetic can be tested exactly;
+// production always uses Date.now().
+function newDeadline(now = Date.now) {
+  return { controller: new AbortController(), expiresAt: now() + PROVIDER_TIMEOUT_MS, now };
+}
+
+async function callGemini(env, model, body, fetchProvider, deadline) {
+  // One timer for the whole request budget: it fires when the deadline passes,
+  // which aborts whichever attempt is in flight and also stops a fallback from
+  // starting a second long wait.
+  const timer = setTimeout(() => deadline.controller.abort(), Math.max(0, deadline.expiresAt - deadline.now()));
   try {
     // The host and model come only from server code/config; no client-supplied
     // URLs, credentials, tools, token budgets, or model overrides are forwarded.
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL}${body ? ':generateContent' : ''}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}${body ? ':generateContent' : ''}`;
     const response = await fetchProvider(url, {
       method: body ? 'POST' : 'GET',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
@@ -122,7 +166,7 @@ async function callGemini(env, body, fetchProvider) {
       // that request throws before it reaches Google. Manual mode exposes a
       // 3xx response to the status handling below without forwarding the key.
       redirect: 'manual',
-      signal: controller.signal,
+      signal: deadline.controller.signal,
     });
     // Do not relay Google's raw error body: it can include sensitive details.
     if (!response.ok) {
@@ -134,7 +178,7 @@ async function callGemini(env, body, fetchProvider) {
     }
     return await readBoundedJson(response, MAX_RESPONSE_BYTES, 502);
   } catch (error) {
-    if (controller.signal.aborted) throw new RelayError(504, 'Gemini timed out. A request may still be billed; no automatic retry was made.');
+    if (deadline.controller.signal.aborted) throw new TimeoutError('Gemini timed out. A request may still be billed; no automatic retry was made.');
     if (error instanceof RelayError) {
       if (error.status === 400) throw new RelayError(502, 'Gemini returned an unreadable response. No automatic retry was made.');
       throw error;
@@ -145,13 +189,63 @@ async function callGemini(env, body, fetchProvider) {
   }
 }
 
+function generationConfig() {
+  // Fixed server-side: the client cannot raise the output cap or the thinking
+  // level, and both models receive the same bounded setting.
+  return { candidateCount: 1, maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: THINKING_LEVEL } };
+}
+
+// A failure worth one fallback attempt: the provider could not serve this
+// request at all. Deliberately excluded are 429 (the account is out of quota, so
+// a second model would fail too and burn more of the budget), 4xx client errors
+// (already rejected before any upstream call), and 422 safety/incomplete
+// responses (re-asking another model to generate the same blocked content is
+// both pointless and an extra charge).
+function providerFailureWorthFallback(error) {
+  return error instanceof RelayError && !(error instanceof TimeoutError) && [502, 503, 504].includes(error.status);
+}
+
+/**
+ * Runs one generation against the configured model chain.
+ *
+ * The fallback is automatic but strictly bounded: at most one extra attempt,
+ * only for a provider-side failure, only if the shared deadline has not passed,
+ * and only after the same native rate limiter approves the second upstream call.
+ * The client always learns which model actually answered, because the response
+ * reports the provider's own modelVersion.
+ */
+async function generate(env, models, body, fetchProvider, deadline, limitAccount) {
+  let failure;
+  for (const [index, model] of models.entries()) {
+    if (index > 0) {
+      // The fallback is a second real upstream call against the same Google
+      // account, so it consumes a second unit of the account rate limit. If the
+      // limiter refuses, report the primary failure rather than a rate-limit
+      // error the client did not cause.
+      if (!await limitAccount()) throw failure;
+    }
+    try {
+      return await callGemini(env, model, body, fetchProvider, deadline);
+    } catch (error) {
+      failure = error;
+      // Stop unless this is a provider-side failure worth one more attempt and
+      // the shared deadline still leaves budget to finish it. A timeout is
+      // rethrown immediately so the client gets the 504 instead of a second
+      // attempt that cannot complete.
+      if (!providerFailureWorthFallback(failure) || deadline.now() >= deadline.expiresAt) throw failure;
+    }
+  }
+  throw failure;
+}
+
 function tokenCount(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 // The optional fetch dependency lets tests exercise the real boundary without
 // credentials, paid requests, or network access to Google.
-export async function handleRequest(request, env, fetchProvider = fetch) {
+// `now` exists only so tests can drive the shared request budget deterministically.
+export async function handleRequest(request, env, fetchProvider = fetch, now = Date.now) {
   const origin = request.headers.get('Origin');
   const allowedOrigin = origin && origin === env.ALLOWED_ORIGIN ? origin : null;
   try {
@@ -176,20 +270,27 @@ export async function handleRequest(request, env, fetchProvider = fetch) {
       input = await readBoundedJson(request, MAX_BODY_BYTES, 413);
       validateInput(input);
     }
-    const account = await env.GEMINI_LIMITER.limit({ key: 'personal-gemini-account' });
-    if (!account.success) throw new RelayError(429, 'Relay rate limit reached. Wait a minute before retrying.');
+    const limitAccount = async () => (await env.GEMINI_LIMITER.limit({ key: 'personal-gemini-account' })).success;
+    if (!await limitAccount()) throw new RelayError(429, 'Relay rate limit reached. Wait a minute before retrying.');
+    // Computed once from server config only; the client cannot influence it.
+    const chain = modelChain(env);
 
     if (path === '/api/status') {
       // Model lookup checks the key and model without generating paid text.
       // Successful lookup does not guarantee later generation quota/billing.
-      const model = await callGemini(env, null, fetchProvider);
-      if (!Array.isArray(model?.supportedGenerationMethods) || !model.supportedGenerationMethods.includes('generateContent')) {
+      // Status deliberately does NOT use the fallback model: its job is to tell
+      // the owner whether the primary model they configured is reachable. A
+      // fallback here would report "connected" while the primary is broken and
+      // hide the setup problem this endpoint exists to surface. The chain is
+      // truncated to the primary rather than relying on a refusal to retry.
+      const status = await generate(env, chain.slice(0, 1), null, fetchProvider, newDeadline(now), limitAccount);
+      if (!Array.isArray(status?.supportedGenerationMethods) || !status.supportedGenerationMethods.includes('generateContent')) {
         throw new RelayError(502, 'The configured Gemini model does not support generateContent. Update GEMINI_MODEL on the Worker.');
       }
       return jsonResponse({ provider: PROVIDER, model: env.GEMINI_MODEL, connected: true }, 200, allowedOrigin);
     }
 
-    const result = await callGemini(env, {
+    const result = await generate(env, chain, {
       systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
       contents: [{ role: 'user', parts: [{ text: JSON.stringify({
         draft: input.prompt,
@@ -198,8 +299,11 @@ export async function handleRequest(request, env, fetchProvider = fetch) {
         targetProfile: input.targetModel,
         draftRuleIds: input.citations,
       }) }] }],
-      generationConfig: { candidateCount: 1, maxOutputTokens: 8192 },
-    }, fetchProvider);
+      generationConfig: generationConfig(),
+    }, fetchProvider, newDeadline(now), limitAccount);
+    // Which model actually answered comes from Google's own response, so a
+    // variant is never labeled with the primary model when the fallback served
+    // it. The chain is only a last-resort label if Google omits the version.
     const candidate = result?.candidates?.[0];
     if (result?.promptFeedback?.blockReason || !candidate || candidate.finishReason !== 'STOP') {
       const message = candidate?.finishReason === 'MAX_TOKENS'
@@ -215,7 +319,7 @@ export async function handleRequest(request, env, fetchProvider = fetch) {
     return jsonResponse({
       text,
       provider: PROVIDER,
-      model: typeof result.modelVersion === 'string' ? result.modelVersion.slice(0, 128) : env.GEMINI_MODEL,
+      model: typeof result.modelVersion === 'string' ? result.modelVersion.slice(0, 128) : chain[0],
       inputTokens: tokenCount(result.usageMetadata?.promptTokenCount),
       outputTokens: tokenCount(result.usageMetadata?.candidatesTokenCount),
       requestId: typeof result.responseId === 'string' ? result.responseId.slice(0, 128) : undefined,

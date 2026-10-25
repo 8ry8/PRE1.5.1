@@ -13,7 +13,15 @@
     // Stable generateContent model that Google offers to new API keys (Oct 2026).
     // gemini-2.5-* models now return "not found" for keys that never used them.
     // Change this if Google retires the model or your key lacks access to it.
-    "GEMINI_MODEL": "gemini-3.8-flash"
+    "GEMINI_MODEL": "gemini-3.8-flash",
+    // Tried once, automatically, only when the primary model fails on the
+    // provider side (unavailable, rejected, or an unreadable reply) — never on a
+    // quota/rate-limit 429, a safety block, or a timeout. Both models accept the
+    // relay's fixed `low` thinking level, and the two attempts share one 180s
+    // server budget, so a fallback cannot double the wait. Remove this line (or
+    // set it to "") to go back to a single model with no fallback.
+    // Flash-Lite's own default is the even lighter `minimal`.
+    "GEMINI_FALLBACK_MODEL": "gemini-3.5-flash-lite"
   },
   "ratelimits": [
     {

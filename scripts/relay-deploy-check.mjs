@@ -50,7 +50,11 @@ export async function verifyRelayConnection(url, accessToken, allowedOrigin, fet
       method: 'GET',
       headers: { Origin: allowedOrigin, Authorization: `Bearer ${accessToken}` },
       redirect: 'error',
-      signal: AbortSignal.timeout(60_000),
+      // Above the relay's own 180s server budget so the check reports the
+      // relay's real error rather than aborting first. The status endpoint does
+      // a single model lookup, so in practice this returns in well under a
+      // second; the generous limit only prevents a false CI failure.
+      signal: AbortSignal.timeout(210_000),
     });
     data = await response.json();
   } catch {
