@@ -3,14 +3,28 @@
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_PROMPT_CHARS = 40_000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
-// Total server-side wall-clock budget for one client request, shared by the
-// primary model and the automatic fallback attempt. Both models are thinking
-// models, and a large draft at the 8,192-token output cap can legitimately need
-// more than a minute. The budget is deliberately shorter than the browser's own
-// limit (210s in src/ai/gemini.ts) so the client always outlives the relay and
-// reports the relay's message rather than a bare abort. Because the two attempts
-// share one budget, a fallback can never double the worst-case wait.
+// Total server-side wall-clock budget for one client request, shared by every
+// attempt: the retries below, the fallback model, and its own retries. Both
+// models are thinking models, and a large draft at the 8,192-token output cap
+// can legitimately need more than a minute. The budget is deliberately shorter
+// than the browser's own limit (210s in src/ai/gemini.ts) so the client always
+// outlives the relay and reports the relay's message rather than a bare abort.
+// Because all attempts share one budget, extra attempts can never multiply the
+// worst-case wait.
 export const PROVIDER_TIMEOUT_MS = 180_000;
+// Google intermittently answers an otherwise valid generateContent call with a
+// transient 5xx (model overloaded, internal error) and Cloudflare's edge can
+// surface its own 5xx for the same subrequest. Failing the user's edit for that
+// is a poor trade: a failed call returns no text and is never saved, so the relay
+// retries the same model itself. These are the waits *before* retry 1 and 2, so
+// the whole sequence costs at most ~1.6s when the provider stays down. Retries
+// are not charged against the account limit (Google does not bill a failed
+// call); see runModel below.
+export const RETRY_DELAYS_MS = [400, 1200];
+// A retry is only started when the shared budget still has room for the wait
+// plus a realistic attempt; otherwise the relay reports the provider failure
+// instead of a timeout the client cannot act on.
+const MIN_RETRY_BUDGET_MS = 20_000;
 // 'low' is accepted by both configured models. It is the lightest setting that
 // still leaves reasoning available; Flash-Lite's own default is 'minimal'.
 // Capping thinking is what keeps a slow generation inside the budget above.
@@ -23,9 +37,16 @@ Return only the revised prompt as plain text or Markdown. Do not answer its task
 The behavioral class and output tier describe the intended downstream task, not permission to execute it. Do not claim that the rewrite, citations, tools, or tests have been independently verified.`;
 
 class RelayError extends Error {
-  constructor(status, message) {
+  // `retryable` marks a *transient* provider-side failure worth another
+  // automatic attempt. It defaults to false so every error that carries a
+  // configuration, credential, quota, or content meaning can never be retried
+  // by accident. `upstreamStatus` is the HTTP status Google (or the edge)
+  // returned; it is a number, never a response body, so it is safe to show.
+  constructor(status, message, retryable = false, upstreamStatus) {
     super(message);
     this.status = status;
+    this.retryable = retryable;
+    this.upstreamStatus = upstreamStatus;
   }
 }
 
@@ -36,6 +57,12 @@ class TimeoutError extends RelayError {
   constructor(message) {
     super(504, message);
   }
+}
+
+// Cloudflare Workers allow setTimeout during a request, so the relay can wait
+// a short, bounded moment before retrying. Exported for tests.
+export function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const MODEL_ID = /^gemini-[a-zA-Z0-9._-]{1,100}$/;
@@ -171,19 +198,34 @@ async function callGemini(env, model, body, fetchProvider, deadline) {
     // Do not relay Google's raw error body: it can include sensitive details.
     if (!response.ok) {
       void response.body?.cancel().catch(() => {});
-      if (response.status === 429) throw new RelayError(429, 'Gemini quota or rate limit reached. Check your Google API quota and billing before retrying.');
-      if (response.status === 404) throw new RelayError(502, 'Gemini model not found. Set GEMINI_MODEL on the Worker to a model available to your key.');
-      if ([400, 401, 403].includes(response.status)) throw new RelayError(502, 'Gemini rejected the request. Check GEMINI_API_KEY, its API restrictions, model access, and billing in Google AI Studio.');
-      throw new RelayError(502, 'Gemini is unavailable. Try again later; no automatic retry was made.');
+      const upstream = response.status;
+      if (upstream === 429) throw new RelayError(429, 'Gemini quota or rate limit reached (upstream HTTP 429). Check your Google API quota and billing before retrying.', false, upstream);
+      if (upstream === 404) throw new RelayError(502, 'Gemini model not found (upstream HTTP 404). Set GEMINI_MODEL on the Worker to a model available to your key.', false, upstream);
+      if ([400, 401, 403].includes(upstream)) throw new RelayError(502, `Gemini rejected the request (upstream HTTP ${upstream}). Check GEMINI_API_KEY, its API restrictions, model access, and billing in Google AI Studio.`, false, upstream);
+      if (upstream >= 300 && upstream < 400) {
+        // A redirect means the fixed Google endpoint is not the one answering;
+        // retrying would repeat the same wrong handshake and could expose the key.
+        throw new RelayError(502, 'Gemini returned an unexpected redirect. Check GEMINI_MODEL and redeploy the Worker.', false, upstream);
+      }
+      // Google's own retry guidance (AIP-194) treats 5xx, 408, 409, and 425 as
+      // transient, and a 5xx here can also be Cloudflare's edge error for the
+      // same subrequest. Everything else is a configuration problem.
+      const transient = upstream >= 500 || [408, 409, 425].includes(upstream);
+      if (!transient) {
+        throw new RelayError(502, `Gemini rejected the request (upstream HTTP ${upstream}). Check the Worker configuration and GEMINI_MODEL.`, false, upstream);
+      }
+      throw new RelayError(502, `Gemini is unavailable (upstream HTTP ${upstream}).`, true, upstream);
     }
     return await readBoundedJson(response, MAX_RESPONSE_BYTES, 502);
   } catch (error) {
-    if (deadline.controller.signal.aborted) throw new TimeoutError('Gemini timed out. A request may still be billed; no automatic retry was made.');
+    if (deadline.controller.signal.aborted) throw new TimeoutError('Gemini timed out. A request may still be billed; the relay stopped attempting.');
     if (error instanceof RelayError) {
       if (error.status === 400) throw new RelayError(502, 'Gemini returned an unreadable response. No automatic retry was made.');
       throw error;
     }
-    throw new RelayError(502, 'The relay could not read a response from Gemini. No automatic retry was made.');
+    // A thrown fetch: a reset connection, a DNS/TLS blip, or an abort that did
+    // not come from our own deadline. Transient by nature, so it is retried.
+    throw new RelayError(502, 'The relay could not reach Gemini (network error).', true);
   } finally {
     clearTimeout(timer);
   }
@@ -205,33 +247,76 @@ function providerFailureWorthFallback(error) {
   return error instanceof RelayError && !(error instanceof TimeoutError) && [502, 503, 504].includes(error.status);
 }
 
+// Only a failure explicitly classified as transient is retried. Timeouts,
+// quota (429), rejected credentials/config, model-not-found, unreadable or
+// oversized replies, and content/safety stops are all excluded: repeating them
+// either cannot succeed or would spend more of the owner's quota for nothing.
+function transientProviderFailure(error) {
+  return error instanceof RelayError && !(error instanceof TimeoutError) && error.retryable === true;
+}
+
 /**
- * Runs one generation against the configured model chain.
+ * Runs one model with a bounded number of automatic attempts.
  *
- * The fallback is automatic but strictly bounded: at most one extra attempt,
- * only for a provider-side failure, only if the shared deadline has not passed,
- * and only after the same native rate limiter approves the second upstream call.
- * The client always learns which model actually answered, because the response
- * reports the provider's own modelVersion.
+ * Retries are deliberately not charged against the account rate limit: Google
+ * does not bill a failed 5xx generation, and charging them would let a brief
+ * provider outage burn through the owner's 10-per-minute allowance and replace
+ * a clear provider message with the relay's own rate-limit error. Retries stay
+ * bounded by RETRY_DELAYS_MS and the shared deadline instead. The fallback
+ * model is charged once, by generate(), because it is a new upstream request.
  */
-async function generate(env, models, body, fetchProvider, deadline, limitAccount) {
+async function runModel(env, model, body, fetchProvider, deadline) {
   let failure;
-  for (const [index, model] of models.entries()) {
-    if (index > 0) {
-      // The fallback is a second real upstream call against the same Google
-      // account, so it consumes a second unit of the account rate limit. If the
-      // limiter refuses, report the primary failure rather than a rate-limit
-      // error the client did not cause.
-      if (!await limitAccount()) throw failure;
-    }
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     try {
       return await callGemini(env, model, body, fetchProvider, deadline);
     } catch (error) {
       failure = error;
-      // Stop unless this is a provider-side failure worth one more attempt and
-      // the shared deadline still leaves budget to finish it. A timeout is
-      // rethrown immediately so the client gets the 504 instead of a second
-      // attempt that cannot complete.
+      if (!transientProviderFailure(failure)) throw failure;
+      const delay = RETRY_DELAYS_MS[attempt];
+      // Stop when the bounded attempts are used up, or when the shared budget
+      // cannot cover the wait plus a realistic attempt. A retry that is certain
+      // to be cut off would replace a clear provider message with a timeout.
+      if (delay === undefined) {
+        throw new RelayError(502,
+          `${failure.message} The relay tried ${attempt + 1} times within its time budget; nothing was saved.`,
+          false, failure.upstreamStatus);
+      }
+      if (deadline.now() + delay + MIN_RETRY_BUDGET_MS > deadline.expiresAt) throw failure;
+      await sleep(delay);
+      // The deadline can pass while waiting; a retry must not start after it.
+      if (deadline.controller.signal.aborted) {
+        throw new TimeoutError('Gemini timed out. A request may still be billed; the relay stopped attempting.');
+      }
+    }
+  }
+  throw failure;
+}
+
+/**
+ * Runs one generation against the configured model chain.
+ *
+ * Both the retries and the fallback are automatic but strictly bounded: a fixed
+ * number of attempts per model, one fallback model, and the same shared
+ * deadline. The client always learns which model actually answered, because the
+ * response reports the provider's own modelVersion.
+ */
+async function generate(env, models, body, fetchProvider, deadline, limitAccount) {
+  let failure;
+  for (const [index, model] of models.entries()) {
+    // The fallback is a second real upstream call against the same Google
+    // account, so it consumes a second unit of the account rate limit. If the
+    // limiter refuses, report the failure the client actually caused rather
+    // than a rate-limit error it did not.
+    if (index > 0 && !await limitAccount()) throw failure;
+    try {
+      return await runModel(env, model, body, fetchProvider, deadline);
+    } catch (error) {
+      failure = error;
+      // Fall back only for a provider-side failure that another model could
+      // plausibly serve, and only while the shared budget is still open. A
+      // timeout is rethrown immediately so the client gets the 504 instead of
+      // an attempt that cannot complete.
       if (!providerFailureWorthFallback(failure) || deadline.now() >= deadline.expiresAt) throw failure;
     }
   }

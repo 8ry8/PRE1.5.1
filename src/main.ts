@@ -515,7 +515,7 @@ async function refine(useGemini = false): Promise<void> {
     evaluation: null,
   };
   state.refining = true;
-  state.notice = useGemini ? 'Gemini is refining the draft. No automatic retries will be made.' : 'Applying the local policy engine…';
+  state.notice = useGemini ? 'Gemini is refining the draft. A brief provider hiccup is retried by the relay automatically.' : 'Applying the local policy engine…';
   render();
   try {
     if (useGemini && adapter) {

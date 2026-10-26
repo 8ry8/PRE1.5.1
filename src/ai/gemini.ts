@@ -58,8 +58,11 @@ export class GeminiRelay implements ProviderAdapter {
     const controller = new AbortController();
     // Longer than the relay's own 180s server budget (PROVIDER_TIMEOUT_MS in
     // relay/worker.mjs) so the client always outlives the Worker and can show
-    // the relay's real message instead of a bare abort. The margin also covers a
-    // single automatic fallback attempt, which shares that same 180s budget.
+    // the relay's real message instead of a bare abort. The margin also covers
+    // the relay's bounded transient retries and its single automatic fallback
+    // attempt, all of which share that same 180s budget. The browser itself
+    // still never retries: only the relay can, because only the relay knows
+    // whether an upstream call was already made.
     const timer = setTimeout(() => controller.abort(), 210_000);
     try {
       let response: Response;

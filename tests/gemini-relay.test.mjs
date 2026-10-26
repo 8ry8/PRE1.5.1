@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { handleRequest, PROVIDER_TIMEOUT_MS } from '../relay/worker.mjs';
+import worker, { handleRequest, PROVIDER_TIMEOUT_MS, RETRY_DELAYS_MS } from '../relay/worker.mjs';
 
 const ORIGIN = 'https://8ry8.github.io';
 const TOKEN = 'test-only-relay-password-with-32-characters';
@@ -135,8 +135,8 @@ test('provider redirects are not followed, so the API key stays on the fixed Goo
     return new Response(null, { status: 302, headers: { Location: 'https://evil.example/collect' } });
   });
   assert.equal(result.status, 502);
-  assert.match((await result.json()).error, /Gemini is unavailable/);
-  assert.equal(calls, 1);
+  assert.match((await result.json()).error, /unexpected redirect/);
+  assert.equal(calls, 1, 'a redirect is a configuration problem, not a transient failure');
 });
 
 test('Worker entry point does not mistake Cloudflare execution context for fetch', async (t) => {
@@ -171,15 +171,23 @@ test('valid refinement uses fixed Google host, server model, headers, and bounde
 });
 
 test('upstream errors are mapped without forwarding credentials or provider details', async () => {
-  for (const [providerStatus, expectedStatus] of [[400, 502], [401, 502], [403, 502], [404, 502], [429, 429], [500, 502]]) {
+  // Configuration, credential, quota, and content errors are reported once: a
+  // retry could not succeed and would only spend quota. Only 5xx is transient.
+  for (const [providerStatus, expectedStatus, attempts] of [
+    [400, 502, 1], [401, 502, 1], [403, 502, 1], [404, 502, 1], [429, 429, 1], [422, 502, 1],
+    [500, 502, 1 + RETRY_DELAYS_MS.length], [503, 502, 1 + RETRY_DELAYS_MS.length],
+  ]) {
     const { fetcher, calls } = upstream({ error: `${KEY} ${TOKEN} private document` }, providerStatus);
     const result = await handleRequest(request(), env(), fetcher);
-    assert.equal(result.status, expectedStatus);
+    assert.equal(result.status, expectedStatus, `status ${providerStatus}`);
     const text = await result.text();
     assert.equal(text.includes(KEY), false);
     assert.equal(text.includes(TOKEN), false);
     assert.equal(text.includes('private document'), false);
-    assert.equal(calls.length, 1);
+    // The upstream status is safe to expose and is what makes the failure
+    // actionable; the provider's body never is.
+    assert.equal(text.includes(String(providerStatus)), true, `status ${providerStatus} should be reported`);
+    assert.equal(calls.length, attempts, `status ${providerStatus} attempt count`);
   }
 });
 
@@ -207,7 +215,7 @@ test('network failures and oversized provider replies are bounded and sanitized'
   assert.equal(result.status, 502);
 });
 
-test('provider timeout aborts with no automatic retry', async (t) => {
+test('provider timeout aborts without starting another attempt', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let markStarted;
   const started = new Promise((resolve) => { markStarted = resolve; });
@@ -221,7 +229,7 @@ test('provider timeout aborts with no automatic retry', async (t) => {
   t.mock.timers.tick(180_000);
   const result = await pending;
   assert.equal(result.status, 504);
-  assert.match((await result.json()).error, /timed out.*no automatic retry/i);
+  assert.match((await result.json()).error, /timed out.*stopped attempting/i);
   assert.equal(calls, 1);
 });
 
@@ -317,7 +325,10 @@ test('the fallback model is rate-limited as a second upstream call', async () =>
   });
   assert.equal(result.status, 502);
   assert.match((await result.json()).error, /Gemini is unavailable/);
-  assert.equal(calls.length, 1, 'a refused rate-limit unit must not start the fallback');
+  // The primary's own transient retries do not consume account units; only the
+  // switch to the fallback model does, and that unit was refused.
+  assert.equal(calls.length, 1 + RETRY_DELAYS_MS.length, 'a refused rate-limit unit must not start the fallback');
+  assert.ok(calls.every((url) => url.includes('gemini-test:generateContent')));
   assert.equal(accountChecks, 2, 'the fallback must consume its own account rate-limit unit');
 });
 
@@ -403,4 +414,104 @@ test('an exhausted budget never starts the fallback, so the primary error is rep
   assert.equal(result.status, 502);
   assert.match((await result.json()).error, /Gemini is unavailable/);
   assert.equal(calls.length, 1, 'no budget left means no second attempt');
+});
+
+test('a transient provider failure is retried automatically, so the edit still succeeds', async () => {
+  const calls = [];
+  let attempt = 0;
+  const result = await handleRequest(request(), env(), async (url, options) => {
+    calls.push({ url, options });
+    // First call fails with a transient provider 5xx, the retry succeeds.
+    return ++attempt === 1
+      ? Response.json({ error: 'backend overloaded' }, { status: 503 })
+      : Response.json(generation);
+  });
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).text, 'Improved prompt.');
+  assert.equal(calls.length, 2);
+  // The retry repeats the identical bounded request: same fixed host, same
+  // server-side model, same generation config, no client-supplied overrides.
+  assert.equal(calls[0].url, calls[1].url);
+  assert.equal(calls[1].options.method, 'POST');
+  assert.equal(calls[1].options.redirect, 'manual');
+  assert.equal(calls[1].options.headers['x-goog-api-key'], KEY);
+  assert.equal(calls[1].options.body, calls[0].options.body);
+});
+
+test('a transient network failure is also retried instead of failing the edit', async () => {
+  let attempt = 0;
+  const result = await handleRequest(request(), env(), async () => {
+    if (++attempt === 1) throw new Error(`connection reset ${KEY}`);
+    return Response.json(generation);
+  });
+  assert.equal(result.status, 200);
+  assert.equal(attempt, 2);
+  assert.equal(JSON.stringify(await result.json()).includes(KEY), false);
+});
+
+test('transient retries are bounded, do not consume account units, and say what happened', async () => {
+  let accountChecks = 0;
+  const calls = [];
+  const configuration = env({
+    GEMINI_LIMITER: { limit: async ({ key }) => { if (key === 'personal-gemini-account') accountChecks++; return { success: true }; } },
+  });
+  const result = await handleRequest(request(), configuration, async (url) => {
+    calls.push(url);
+    return Response.json({ error: 'unavailable' }, { status: 500 });
+  });
+  assert.equal(result.status, 502);
+  const message = (await result.json()).error;
+  assert.match(message, /Gemini is unavailable/);
+  assert.match(message, new RegExp(`tried ${1 + RETRY_DELAYS_MS.length} times`));
+  assert.match(message, /HTTP 500/);
+  assert.equal(calls.length, 1 + RETRY_DELAYS_MS.length, 'retries stay at the fixed bound');
+  // One unit for the request's first call; retries of a failed 5xx call are not
+  // charged, so a brief outage cannot exhaust the owner's per-minute allowance.
+  assert.equal(accountChecks, 1);
+  assert.equal(message.includes(KEY), false);
+  assert.equal(message.includes(TOKEN), false);
+});
+
+test('a provider outage across both models is still bounded by attempts', async () => {
+  const calls = [];
+  let accountChecks = 0;
+  const configuration = fallbackEnv({
+    GEMINI_LIMITER: { limit: async ({ key }) => { if (key === 'personal-gemini-account') accountChecks++; return { success: true }; } },
+  });
+  const result = await handleRequest(request(), configuration, async (url) => {
+    calls.push(url);
+    return Response.json({ error: 'unavailable' }, { status: 503 });
+  });
+  assert.equal(result.status, 502);
+  const perModel = 1 + RETRY_DELAYS_MS.length;
+  assert.equal(calls.length, perModel * 2, 'at most the fixed bound per model, never an open loop');
+  assert.equal(calls.filter((url) => url.includes('gemini-test:generateContent')).length, perModel);
+  assert.equal(calls.filter((url) => url.includes('gemini-fallback:generateContent')).length, perModel);
+  assert.match((await result.json()).error, /Gemini is unavailable.*HTTP 503/);
+  // Only the fallback switch spends a second account unit, even with retries.
+  assert.equal(accountChecks, 2);
+});
+
+test('a failure that is not transient is reported at once and never retried', async () => {
+  // 429 quota, 400 credential/config rejection, 404 model missing, 302 redirect,
+  // an oversized reply, and a content/safety stop can all only repeat.
+  const cases = [
+    [429, { error: 'quota' }, 429],
+    [400, { error: 'bad request' }, 502],
+    [401, { error: 'bad key' }, 502],
+    [403, { error: 'forbidden' }, 502],
+    [404, { error: 'no model' }, 502],
+    [302, { error: 'redirect' }, 502],
+    [418, { error: 'teapot' }, 502],
+  ];
+  for (const [providerStatus, reply, expected] of cases) {
+    let calls = 0;
+    const result = await handleRequest(request(), env(), async () => { calls++; return Response.json(reply, { status: providerStatus }); });
+    assert.equal(result.status, expected, `status ${providerStatus}`);
+    assert.equal(calls, 1, `status ${providerStatus} must not be retried`);
+  }
+  let oversized = 0;
+  const big = await handleRequest(request(), env(), async () => { oversized++; return Response.json({ oversized: 'x'.repeat(530_000) }); });
+  assert.equal(big.status, 502);
+  assert.equal(oversized, 1, 'an oversized reply would repeat identically');
 });
