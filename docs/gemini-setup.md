@@ -131,7 +131,7 @@ The website remembers only the Worker URL. The access password is kept in page m
 
 - **No API connection menu on the public site:** the frontend changes have not been published yet. Review/merge the branch and let the existing Pages workflow deploy it.
 - **Could not reach the relay:** verify HTTPS, the base URL, deployment, and exact `ALLOWED_ORIGIN`. CORS errors are usually an origin mismatch. CORS is not authentication; the password is still mandatory.
-- **Access password incorrect:** use the secret `RELAY_ACCESS_TOKEN`, not the Gemini API key. Re-enter it after a page reload. Rotating it invalidates old connections on their next request.
+- **Access password incorrect:** use the secret `RELAY_ACCESS_TOKEN`, not the Gemini API key. Re-enter it after a page reload. Rotating it invalidates old connections on their next request. If you have lost track of which value is where — or you changed a secret without redeploying — follow **Clean-slate credential reset** below.
 - **Relay setup incomplete:** check both secrets, the origin/model variables, and the `GEMINI_LIMITER` binding. The relay fails closed if any required setting is absent or the two secrets are the same.
 - **Gemini rejected the request / model not found:** check key validity, API restrictions, available models, and billing in Google AI Studio. Update `GEMINI_MODEL` if the configured model is unavailable to your key or retired (for example, new keys cannot use `gemini-2.5-flash`).
 - **Quota / rate limit:** wait, then check Google quota/billing. Do not repeatedly press Refine. Cloudflare's limiter is location-scoped and approximate, not a global monthly budget.
@@ -142,49 +142,99 @@ The website remembers only the Worker URL. The access password is kept in page m
 
 This is a private personal-use connection, **not** production multi-tenant authentication. Do not distribute the password to website visitors or remove the guard for public use. A public service needs accounts, per-user authorization and quotas, abuse controls, and a reviewed privacy policy.
 
-## Fix the access token (step by step)
+## Clean-slate credential reset (key + password)
 
-Two different credentials are in play, and mixing them up causes nearly every connection failure:
+Use this when you have lost track of which value went where. It replaces **both** credentials and finishes with an objective pass/fail test, so you never have to guess which one is wrong.
 
-| Credential | Made by | Stored in | Typed into the site |
+Two credentials are in play, and swapping them is the usual cause of every connection failure:
+
+| Credential | Made by | Lives in | Typed into the site |
 | --- | --- | --- | --- |
 | `GEMINI_API_KEY` | Google AI Studio | Worker secret only | **Never** |
 | `RELAY_ACCESS_TOKEN` | You, with any password manager | Worker secret **and** your password manager | The **Relay access password** box |
 
-The site never asks for the Google key. If something starting with `AIza` ends up in a website field, the wrong value is being pasted.
+The site never asks for the Google key. If a value starting with `AIza` lands in a website field, the wrong value was pasted.
 
-### 1. Start from the exact message shown by **Test & connect**
+### 1. Decide which route owns your secrets — and use only that one
 
-| Message | Meaning | Next step |
-| --- | --- | --- |
-| "That looks like a Google API key…" | The Gemini key was pasted into the site's password box. | Step 2 |
-| "Enter the separate RELAY_ACCESS_TOKEN password…" | Password is under 32 characters, contains a space, or has non-ASCII characters. | Step 2 |
-| "Access password is incorrect…" (401) | Worker setup is fine; the password typed on the site is not the one stored in Cloudflare. | Step 3 |
-| "Relay setup is incomplete…" (503) | A secret is missing, or `RELAY_ACCESS_TOKEN` breaks a rule: 32–256 characters, printable ASCII, no spaces, not starting with `AIza`, not equal to `GEMINI_API_KEY`. | Step 3 |
-| "This website origin is not allowed…" (403) | `ALLOWED_ORIGIN` mismatch — not a password problem. | Troubleshooting above |
-| "Gemini rejected the request" / "Gemini model not found" (502) | The Google-side key or model — not the password. | Step 5 |
+- **Route A (GitHub Actions).** If you have ever run **Deploy private Gemini relay**, GitHub is the source of truth. Every run pushes the GitHub values into the Worker, so **any change you make in the Cloudflare dashboard is silently overwritten** by the next run. This is the most common way to "fix" a secret and see nothing change.
+- **Route B (your computer).** If you deployed with `npm run relay:deploy`, Cloudflare is the source of truth and the GitHub secrets are irrelevant.
 
-### 2. Generate a fresh password
+**Pick one route and stop touching the other.** If you are unsure which you used, use Route A: it is self-verifying (step 4).
+
+### 2. Make a new key in Google AI Studio
+
+1. Open [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and **Create API key** in a project where the **Generative Language API** is enabled.
+2. Leave the key **unrestricted by HTTP referrer** — these calls come from your Worker, not from a browser.
+3. Confirm the project has quota/billing enabled.
+4. Copy the key once. It goes into a secret in step 3 — **never** into the website, a file, a chat message, or this repository.
+5. After the new key works (step 4/5), delete the old key in AI Studio.
+
+Keep `GEMINI_MODEL` at its default `gemini-3.8-flash` for a new key. Newly created keys cannot use `gemini-2.5-*` models, which produce **Gemini model not found**.
+
+### 3. Make a new relay password
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-That produces 64 hex characters, which satisfies every rule. Save it in your password manager as the relay password. Never reuse the Gemini key.
+That yields 64 hex characters and satisfies every rule the relay enforces: 32–256 characters, printable ASCII, no spaces, not starting with `AIza`, and not equal to `GEMINI_API_KEY`. Save it in your password manager as the relay password.
 
-### 3. Store it in Cloudflare — use the same route you deployed with
+### 4. Write both values into GitHub secrets (Route A)
 
-**If you deployed with the GitHub Actions workflow:** update the **`RELAY_ACCESS_TOKEN` repository secret** at *Settings → Secrets and variables → Actions → New repository secret*, then rerun **Deploy private Gemini relay**. The workflow writes the GitHub value into the Worker on every run, so a dashboard-only change is silently replaced by the stale GitHub value on the next deployment. Do not mix the two routes.
+In **Settings → Secrets and variables → Actions → New repository secret**, set or overwrite:
 
-**If you deployed from your computer:** open **Workers & Pages → pre-gemini-relay → Settings → Variables and Secrets**, edit the **`RELAY_ACCESS_TOKEN`** secret, paste the new password, and **Deploy** to activate it. Or use the interactive prompt, which does not put the value in your shell history:
+| Secret name | Value |
+| --- | --- |
+| `GEMINI_API_KEY` | The new key from step 2. |
+| `RELAY_ACCESS_TOKEN` | The new password from step 3. |
+
+GitHub never shows a secret's value again; overwriting with a new value is the normal way to rotate one. Leave `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` untouched.
+
+**Do not** paste these into `relay/wrangler.jsonc`, a `VITE_` variable, workflow inputs, an issue, or a chat message.
+
+### 5. Rerun the deployment — this is the test
+
+**Actions → Deploy private Gemini relay → Run workflow → branch `main`**, or from a terminal:
 
 ```bash
-npm run relay:secret -- RELAY_ACCESS_TOKEN
+gh api repos/8ry8/PRE1.5.1/dispatches -f event_type=deploy-gemini-relay
 ```
 
-Do not pipe the value with `echo`, which appends a newline that becomes part of the secret and fails the format check. If you must pipe, use `printf '%s' "$TOKEN" | npx wrangler secret put RELAY_ACCESS_TOKEN --config relay/wrangler.jsonc`.
+The workflow validates both secrets, deploys them to the Worker, then calls `/api/status` **with the new password** and checks the model with Google. That last step is a real end-to-end test of both credentials:
 
-### 4. Verify from a terminal before touching the site
+- **Green run** → the password on the Worker, the Google key, the model, and `ALLOWED_ORIGIN` are all correct. The run summary also prints your **Worker URL**.
+- **Red run** → the log names what is wrong (for example *Gemini model not found* or *Gemini rejected the request*) and never prints any secret value.
+
+If you change a secret and **do not** rerun this workflow, the Worker keeps the old value and the site will keep rejecting your new password.
+
+### 6. Connect from the published Pages site
+
+1. Open the **published** site, `https://8ry8.github.io/PRE1.5.1/`. An Arena/branch preview is a different origin and is refused with **This website origin is not allowed.**
+2. Open **API connection** and enter the Worker **base URL** from the run summary — no `/api/status` path.
+3. Paste the **relay password** from step 3 — not the Gemini key.
+4. Click **Test & connect**. It does a model lookup, not a generation, so it costs no output quota.
+
+The password is held in page memory only: re-enter it after any reload, and use **Disconnect** to clear it.
+
+### 7. Read the exact message if it still fails
+
+| Message | Meaning | What to do |
+| --- | --- | --- |
+| "That looks like a Google API key…" | The Gemini key was pasted into the site's password box. | Paste `RELAY_ACCESS_TOKEN` instead. |
+| "Enter the separate RELAY_ACCESS_TOKEN password…" | Password is under 32 characters, contains a space, or has non-ASCII characters. | Regenerate with step 3. |
+| "Access password is incorrect." (401) | The Worker is healthy; the value you typed is not the one now deployed. | Re-copy from your password manager. If you rotated the GitHub secret, rerun the workflow first — the Worker still holds the old one until you do. |
+| "Relay setup is incomplete." (503) | A secret is missing or malformed, or the two secrets are equal. | Rerun the workflow; its first step names any invalid secret. |
+| "This website origin is not allowed." (403) | You are not on `https://8ry8.github.io`. | Use the published Pages site, not a preview. |
+| "Relay rate limit reached." (429) | More than 10 requests/minute. | Wait 60 seconds. Do not press Refine repeatedly. |
+| "Gemini rejected the request (upstream HTTP 400/401/403)." | Google refused the key: invalid, restricted, wrong project, or billing off. | New key (step 2); check API restrictions and billing. |
+| "Gemini model not found (upstream HTTP 404)." | That model is not available to your key. | Keep `gemini-3.8-flash`; new keys cannot use `gemini-2.5-*`. |
+| "Gemini quota or rate limit reached (upstream HTTP 429)." | Out of Google quota. | Wait, then check quota/billing. Do not retry repeatedly. |
+| "Gemini is unavailable (upstream HTTP 5xx). The relay tried N times…" | Google had a transient outage; **your password and key are fine.** | Wait a minute and press Refine again; if it persists, check [status.cloud.google.com](https://status.cloud.google.com/). |
+| "Could not reach the relay." | Wrong URL or the Worker is not deployed. | Copy the base URL from the run summary. |
+| "The relay timed out." | Draft too large for the shared 180-second budget. | Reduce the draft/attachments. A timed-out request can still be billed. |
+
+Verify from a terminal at any time without opening the site (one model lookup, no generation):
 
 ```bash
 curl -s -w '\nHTTP %{http_code}\n' \
@@ -193,21 +243,7 @@ curl -s -w '\nHTTP %{http_code}\n' \
   https://pre-gemini-relay.YOUR-SUBDOMAIN.workers.dev/api/status
 ```
 
-This does one model lookup, so it spends no generation quota (it does use one unit of the relay's 10-per-minute limit).
-
-- `200` with `{"provider":"Google Gemini","model":"gemini-3.8-flash","connected":true}` → password and Google key both good.
-- `401` → wrong password in that command; the Worker itself is configured.
-- `503` → a secret is missing or malformed — usually a trailing newline or a short value. Redo step 3.
-- `403` → the `Origin` header must match `ALLOWED_ORIGIN` exactly, with no trailing slash or `/PRE1.5.1/` path.
-- `429` → wait 60 seconds and retry.
-
-### 5. If the failure is on the Google side
-
-A `502` ("Gemini rejected the request" or "Gemini model not found") means the password worked and Google refused the call. In **[Google AI Studio](https://aistudio.google.com/apikey)**, create a key in a project where the Generative Language API is enabled, leave it unrestricted by HTTP referrer (these calls come from a server, not a browser), and confirm billing/quota. Then update the **`GEMINI_API_KEY`** Worker secret the same way as step 3. Newly created keys cannot use `gemini-2.5-*` models; `GEMINI_MODEL` defaults to `gemini-3.8-flash`, and `GEMINI_FALLBACK_MODEL` to `gemini-3.5-flash-lite`.
-
-### 6. Enter it on the site
-
-Open **API connection**, confirm the Worker base URL (no `/api/status` path), paste the relay password — **not** the Gemini key — and click **Test & connect**. The password is held in page memory only: re-enter it after a reload. Rotating it invalidates older sessions on their next request, which is what you want if a value leaked.
+`200` with `{"provider":"Google Gemini","model":"gemini-3.8-flash","connected":true}` means both credentials are good. `401` is a password mismatch, `503` a missing or malformed secret, `403` a wrong `Origin` header. Do not pipe a secret with `echo`, which appends a newline that becomes part of the value; use the GitHub form or the interactive `npm run relay:secret -- RELAY_ACCESS_TOKEN` prompt.
 
 ## Developer checks (no real key or paid call required)
 
